@@ -108,6 +108,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @State private var usageCycleIndex = 0
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -858,45 +859,46 @@ struct IslandPanelView: View {
         }
     }
 
-    private var openedUsageProviders: [UsageProviderPresentation] {
+    /// Every window from every connected provider, flattened into one
+    /// ordered list. `openedUsageProviders` shows exactly one entry from
+    /// this list at a time — clicking the badge advances `usageCycleIndex`.
+    private var openedUsageCycleEntries: [UsageCycleEntry] {
         guard model.islandUsageDisplay == .compact else {
             return []
         }
 
-        var providers: [UsageProviderPresentation] = []
+        var entries: [UsageCycleEntry] = []
 
         if let snapshot = model.claudeUsageSnapshot,
            snapshot.isEmpty == false {
-            var windows: [UsageWindowPresentation] = []
-
             if let fiveHour = snapshot.fiveHour {
-                windows.append(
-                    UsageWindowPresentation(
+                entries.append(
+                    UsageCycleEntry(
                         id: "claude-5h",
-                        label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
-                        resetsAt: fiveHour.resetsAt
+                        providerId: "claude",
+                        providerTitle: "Claude",
+                        window: UsageWindowPresentation(
+                            id: "claude-5h",
+                            label: "5h",
+                            usedPercentage: fiveHour.usedPercentage,
+                            resetsAt: fiveHour.resetsAt
+                        )
                     )
                 )
             }
 
             if let sevenDay = snapshot.sevenDay {
-                windows.append(
-                    UsageWindowPresentation(
+                entries.append(
+                    UsageCycleEntry(
                         id: "claude-7d",
-                        label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
-                        resetsAt: sevenDay.resetsAt
-                    )
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "claude",
-                        title: "Claude",
-                        windows: windows
+                        providerId: "claude",
+                        providerTitle: "Claude",
+                        window: UsageWindowPresentation(
+                            id: "claude-7d",
+                            label: "7d",
+                            usedPercentage: sevenDay.usedPercentage,
+                            resetsAt: sevenDay.resetsAt
+                        )
                     )
                 )
             }
@@ -905,54 +907,68 @@ struct IslandPanelView: View {
         if model.showCodexUsage,
            let snapshot = model.codexUsageSnapshot,
            snapshot.isEmpty == false {
-            let windows = snapshot.windows.map { window in
-                UsageWindowPresentation(
+            entries.append(contentsOf: snapshot.windows.map { window in
+                UsageCycleEntry(
                     id: "codex-\(window.key)",
-                    label: window.label,
-                    usedPercentage: window.usedPercentage,
-                    resetsAt: window.resetsAt
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "codex",
-                        title: "Codex",
-                        windows: windows
+                    providerId: "codex",
+                    providerTitle: "Codex",
+                    window: UsageWindowPresentation(
+                        id: "codex-\(window.key)",
+                        label: window.label,
+                        usedPercentage: window.usedPercentage,
+                        resetsAt: window.resetsAt
                     )
                 )
-            }
+            })
         }
 
-        // Cursor's usage-based-pricing plans report null quota fields on the
-        // only endpoint available here, so an empty snapshot is the common
-        // case, not a bug — the chip simply stays hidden until Cursor
-        // populates real data for this account.
-        if model.showCursorUsage,
-           let snapshot = model.cursorUsageSnapshot,
+        // No toggle here — connecting Cursor (Settings) is itself the
+        // opt-in, same as Claude. Cursor's usage-based-pricing plans report
+        // null quota fields on the only endpoint available here, so an empty
+        // snapshot is the common case, not a bug — those windows simply
+        // never enter the cycle until Cursor populates real data.
+        if let snapshot = model.cursorUsageSnapshot,
            snapshot.isEmpty == false {
-            let windows = snapshot.windows.map { window in
-                UsageWindowPresentation(
+            entries.append(contentsOf: snapshot.windows.map { window in
+                UsageCycleEntry(
                     id: "cursor-\(window.modelName)",
-                    label: window.modelName,
-                    usedPercentage: window.usedPercentage,
-                    resetsAt: nil
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "cursor",
-                        title: "Cursor",
-                        windows: windows
+                    providerId: "cursor",
+                    providerTitle: "Cursor",
+                    window: UsageWindowPresentation(
+                        id: "cursor-\(window.modelName)",
+                        label: window.modelName,
+                        usedPercentage: window.usedPercentage,
+                        resetsAt: nil
                     )
                 )
-            }
+            })
         }
 
-        return providers
+        return entries
+    }
+
+    private func advanceUsageCycle() {
+        let count = openedUsageCycleEntries.count
+        guard count > 0 else { return }
+        usageCycleIndex = (usageCycleIndex + 1) % count
+    }
+
+    /// At most one entry — the current position in the usage cycle. Reusing
+    /// `UsageProviderPresentation` here (rather than a dedicated single-entry
+    /// type) means the existing lane-splitting/layout math below needs no
+    /// changes: it already handles the "0 or 1 provider" case correctly.
+    private var openedUsageProviders: [UsageProviderPresentation] {
+        let entries = openedUsageCycleEntries
+        guard entries.isEmpty == false else { return [] }
+
+        let entry = entries[usageCycleIndex % entries.count]
+        return [
+            UsageProviderPresentation(
+                id: entry.providerId,
+                title: entry.providerTitle,
+                windows: [entry.window]
+            ),
+        ]
     }
 
     private func splitUsageProviders(
@@ -1078,6 +1094,11 @@ struct IslandPanelView: View {
             Capsule()
                 .strokeBorder(.white.opacity(0.06), lineWidth: 1)
         )
+        .contentShape(Capsule())
+        .onTapGesture {
+            advanceUsageCycle()
+        }
+        .accessibilityAddTraits(.isButton)
         .help(usageHelpText(for: provider))
     }
 
@@ -1183,6 +1204,14 @@ private struct UsageWindowPresentation: Identifiable {
     var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
     }
+}
+
+/// One window from one provider — the unit the badge cycles through on tap.
+private struct UsageCycleEntry: Identifiable {
+    let id: String
+    let providerId: String
+    let providerTitle: String
+    let window: UsageWindowPresentation
 }
 
 private struct OpenedHeaderMetrics {

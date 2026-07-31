@@ -27,7 +27,6 @@
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
-"settings.general.showCursorUsage" = "顯示 Cursor 用量";
 "settings.general.connectCursor" = "連接";
 "settings.general.reconnectCursor" = "重新連接";
 "settings.general.disconnect" = "中斷連接";

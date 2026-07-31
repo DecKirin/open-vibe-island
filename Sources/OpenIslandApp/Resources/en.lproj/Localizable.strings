@@ -27,7 +27,6 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
-"settings.general.showCursorUsage" = "Show Cursor usage";
 "settings.general.connectCursor" = "Connect";
 "settings.general.reconnectCursor" = "Reconnect";
 "settings.general.disconnect" = "Disconnect";

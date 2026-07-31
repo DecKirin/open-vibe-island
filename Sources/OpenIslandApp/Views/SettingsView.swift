@@ -699,11 +699,6 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text(lang.t("settings.general.disconnectConfirmMessage.cursorUsage"))
                 }
-
-                Toggle(lang.t("settings.general.showCursorUsage"), isOn: Binding(
-                    get: { model.showCursorUsage },
-                    set: { model.showCursorUsage = $0 }
-                ))
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))

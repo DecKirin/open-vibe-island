@@ -21,7 +21,6 @@ final class AppModel {
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
-    private static let showCursorUsageDefaultsKey = "app.showCursorUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -260,12 +259,6 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
-        }
-    }
-    var showCursorUsage: Bool = false {
-        didSet {
-            guard hasFinishedInit, showCursorUsage != oldValue else { return }
-            UserDefaults.standard.set(showCursorUsage, forKey: Self.showCursorUsageDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -624,9 +617,6 @@ final class AppModel {
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
-        // Unlike Codex, there's no local signal for "has a Cursor account" —
-        // default off unless the user has explicitly toggled it before.
-        showCursorUsage = UserDefaults.standard.bool(forKey: Self.showCursorUsageDefaultsKey)
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
@@ -1114,10 +1104,10 @@ final class AppModel {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
-            if showCursorUsage {
-                hooks.refreshCursorUsageState()
-                hooks.startCursorUsageMonitoringIfNeeded()
-            }
+            // No toggle for Cursor — connecting (an explicit user action) is
+            // itself the opt-in, same as Claude's usage bridge install.
+            hooks.refreshCursorUsageState()
+            hooks.startCursorUsageMonitoringIfNeeded()
             updateChecker.startIfNeeded()
 
         } else {
