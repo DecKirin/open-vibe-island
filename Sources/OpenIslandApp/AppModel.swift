@@ -915,12 +915,16 @@ final class AppModel {
                 if ta != tb { return ta < tb }
                 return a.id < b.id
             }
+            // Matches `V6RightSlotView.balancedRows`'s hand-tuned table,
+            // which holds up to 12 cells (two rows of 6) before the layout
+            // has no good shape left to offer — beyond that, fold to a
+            // single overflow tile rather than a cramped/illegible grid.
             var cells: [AgentGridCell] = []
-            if ordered.count <= 9 {
+            if ordered.count <= 12 {
                 cells = ordered.map(Self.agentsGridCell(for:))
             } else {
-                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
-                cells.append(.overflow(ordered.count - 7))
+                cells = ordered.prefix(11).map(Self.agentsGridCell(for:))
+                cells.append(.overflow(ordered.count - 11))
             }
             return cells.isEmpty ? nil : .agents(cells)
         }

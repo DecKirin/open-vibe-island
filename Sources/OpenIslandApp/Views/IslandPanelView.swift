@@ -269,10 +269,10 @@ struct IslandPanelView: View {
                 minWidth: 70
             )
         }
-        return OverlayPanelController.closedPanelWidth(
-            notchWidth: closedNotchWidth,
-            isNotchedDisplay: true,
-            notchStatus: .closed
+        return V6ClosedPill.macbookIntrinsicWidth(
+            physicalNotchWidth: targetOverlayScreen?.notchSize.width ?? 180,
+            rightSlot: model.islandClosedRightSlotContent(),
+            height: closedNotchHeight
         )
     }
 
@@ -656,7 +656,14 @@ struct IslandPanelView: View {
         model.notchOpenReason == .notification && actionableSessionID != nil
     }
 
-    private static let maxSessionListHeight: CGFloat = 560
+    private static let maxSessionListHeight: CGFloat = 720
+    /// Must match `OverlayPanelController.maxVisibleSessionRows` — the
+    /// "certain amount" threshold. Below it the list isn't wrapped in a
+    /// `ScrollView` at all (not just sized to not need scrolling): a
+    /// `ScrollView` still captures scroll gestures and shows rubber-band
+    /// bounce even when its content already fits, which read as "still
+    /// scrollable" even though nothing was actually being clipped.
+    private static let maxVisibleSessionRows: Int = 8
 
     private var sessionListSideInset: CGFloat {
         usesNotchAwareOpenedHeader ? 46 : 16
@@ -694,11 +701,15 @@ struct IslandPanelView: View {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
 
-                    ScrollView(.vertical) {
+                    if model.islandListSessions.count > Self.maxVisibleSessionRows {
+                        ScrollView(.vertical) {
+                            sessionRowsContent(referenceDate: referenceDate)
+                        }
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                    } else {
                         sessionRowsContent(referenceDate: referenceDate)
                     }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
 
                     sessionPanelFooter
                 }

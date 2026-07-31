@@ -998,7 +998,9 @@ private struct SessionListPanelPreview: View {
     }
 
     private var preferredPanelWidth: CGFloat {
-        profile == .notch ? 540 : 520
+        // Mirrors OverlayPanelController's preferredNotchOpenedPanelWidth/
+        // preferredTopBarOpenedPanelWidth.
+        profile == .notch ? 640 : 620
     }
 
     private func panel(width: CGFloat) -> some View {
