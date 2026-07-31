@@ -419,7 +419,6 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallClaudeUsage = false
-    @State private var confirmingDisconnectCursorUsage = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -641,64 +640,10 @@ struct SetupSettingsPane: View {
                     set: { model.showCodexUsage = $0 }
                 ))
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Label(lang.t("setup.cursorUsageBridge"), systemImage: "chart.bar")
-                        Spacer()
-                        switch model.cursorUsageConnectionState {
-                        case .connected:
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                Text(lang.t("setup.cursorUsageConnected"))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button(lang.t("settings.general.disconnect")) {
-                                confirmingDisconnectCursorUsage = true
-                            }
-                        case .reauthRequired:
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                Text(lang.t("setup.cursorUsageSessionExpired"))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button(lang.t("settings.general.reconnectCursor")) {
-                                model.connectCursorUsage()
-                            }
-                        case .error:
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                Text(lang.t("setup.cursorUsageUnavailable"))
-                                    .foregroundStyle(.secondary)
-                            }
-                        case .connecting:
-                            ProgressView().controlSize(.small)
-                        case .disconnected:
-                            if model.isCursorUsageConnectBusy {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Button(lang.t("settings.general.connectCursor")) {
-                                    model.connectCursorUsage()
-                                }
-                            }
-                        }
-                    }
-                    if model.cursorUsageConnectionState == .connected, model.cursorUsageSnapshot?.isEmpty != false {
-                        Text(lang.t("setup.cursorUsageNoData"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .alert(lang.t("settings.general.disconnectConfirmTitle"), isPresented: $confirmingDisconnectCursorUsage) {
-                    Button(lang.t("settings.general.disconnectConfirmAction"), role: .destructive) {
-                        model.disconnectCursorUsage()
-                    }
-                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
-                } message: {
-                    Text(lang.t("settings.general.disconnectConfirmMessage.cursorUsage"))
-                }
+                Toggle(lang.t("settings.general.showCursorUsage"), isOn: Binding(
+                    get: { model.showCursorUsage },
+                    set: { model.showCursorUsage = $0 }
+                ))
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))

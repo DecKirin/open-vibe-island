@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 import OpenIslandCore
@@ -27,7 +26,6 @@ final class HookInstallationCoordinator {
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
     var cursorUsageSnapshot: CursorUsageSnapshot?
-    var cursorUsageConnectionState: CursorUsageOAuthManager.ConnectionState = .disconnected
     var hooksBinaryURL: URL?
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
@@ -40,7 +38,6 @@ final class HookInstallationCoordinator {
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
     var isClaudeUsageSetupBusy = false
-    var isCursorUsageConnectBusy = false
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -102,11 +99,6 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var cursorUsageMonitorTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private let cursorUsageOAuthManager = CursorUsageOAuthManager(openURL: { url in
-        NSWorkspace.shared.open(url)
-    })
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -294,32 +286,19 @@ final class HookInstallationCoordinator {
     }
 
     var cursorUsageStatusTitle: String {
-        switch cursorUsageConnectionState {
-        case .disconnected: "Cursor not connected"
-        case .connecting: "Connecting to Cursor…"
-        case .connected: cursorUsageSnapshot?.isEmpty == false ? "Cursor usage detected" : "Cursor connected"
-        case .reauthRequired: "Cursor session expired"
-        case .error: "Cursor usage temporarily unavailable"
+        if cursorUsageSnapshot?.isEmpty == false {
+            return "Cursor usage detected"
         }
+
+        return "Waiting for Cursor usage"
     }
 
     var cursorUsageStatusSummary: String {
-        switch cursorUsageConnectionState {
-        case .disconnected:
-            "Connect your Cursor account to show its usage in the badge."
-        case .connecting:
-            "Waiting for you to approve the sign-in request in your browser…"
-        case .connected:
-            if let summary = cursorUsageSummaryText {
-                summary
-            } else {
-                "Connected — no quota data reported for this account. Cursor's usage-based-pricing plans currently report null quota fields on this endpoint."
-            }
-        case .reauthRequired:
-            "Cursor session expired — reconnect to keep showing usage."
-        case let .error(message):
-            "Cursor usage temporarily unavailable: \(message)"
+        if let summary = cursorUsageSummaryText {
+            return "Reading Cursor IDE's local session · \(summary)"
         }
+
+        return "Passively reads Cursor IDE's local session (state.vscdb) when it's installed and logged in — no separate connection needed. Nothing shows until Cursor reports usage for this account."
     }
 
     var cursorUsageSummaryText: String? {
@@ -328,7 +307,7 @@ final class HookInstallationCoordinator {
         }
 
         var components = snapshot.windows.map { window in
-            "\(window.modelName) \(window.roundedUsedPercentage)%"
+            "\(window.label) \(window.roundedUsedPercentage)%"
         }
 
         if let capturedAt = snapshot.capturedAt {
@@ -843,75 +822,22 @@ final class HookInstallationCoordinator {
         }
     }
 
-    /// No-op (no network call) unless a Cursor session already exists —
-    /// avoids polling a third-party endpoint for a toggle the user hasn't
-    /// connected yet. Checks the OAuth manager's own state (not the cached
-    /// `cursorUsageConnectionState`) so a session resumed from Keychain on
-    /// launch is picked up correctly.
+    /// Passively reads Cursor IDE's own local session — no connect/install
+    /// step, matching Codex's local-file-only pattern. Silently no-ops
+    /// (keeps whatever snapshot is already showing, or none) if Cursor
+    /// isn't installed, isn't logged in, or the request fails — there's no
+    /// user-facing action to take in any of those cases, so this never
+    /// surfaces an error state, only degrades to "no data."
     func refreshCursorUsageState() {
         Task { [weak self] in
             guard let self else { return }
 
-            let managerState = await self.cursorUsageOAuthManager.state
-            guard managerState != .disconnected else {
-                self.cursorUsageConnectionState = .disconnected
-                return
-            }
-
             do {
-                let snapshot = try await self.cursorUsageOAuthManager.fetchUsageSnapshot()
+                let snapshot = try await CursorUsageLoader.load()
                 self.cursorUsageSnapshot = snapshot
-                self.cursorUsageConnectionState = await self.cursorUsageOAuthManager.state
-            } catch CursorUsageOAuthManager.OAuthError.reauthRequired {
-                self.cursorUsageConnectionState = .reauthRequired
-                self.cursorUsageMonitorTask?.cancel()
-                self.cursorUsageMonitorTask = nil
-                self.onStatusMessage?("Cursor session expired — reconnect to keep showing usage.")
-            } catch CursorUsageOAuthManager.OAuthError.notConnected {
-                self.cursorUsageConnectionState = .disconnected
-                self.cursorUsageMonitorTask?.cancel()
-                self.cursorUsageMonitorTask = nil
             } catch {
-                // Transient (network) failure: keep the last good snapshot on
-                // screen rather than blanking the badge.
-                self.cursorUsageConnectionState = .error(error.localizedDescription)
+                self.onStatusMessage?("Failed to read Cursor usage state: \(error.localizedDescription)")
             }
-        }
-    }
-
-    func connectCursorUsage() {
-        isCursorUsageConnectBusy = true
-        cursorUsageConnectionState = .connecting
-        onStatusMessage?("Opening Cursor sign-in in your browser…")
-
-        Task { [weak self] in
-            guard let self else { return }
-
-            defer { self.isCursorUsageConnectBusy = false }
-
-            do {
-                try await self.cursorUsageOAuthManager.login()
-                self.cursorUsageConnectionState = await self.cursorUsageOAuthManager.state
-                self.onStatusMessage?("Cursor connected.")
-                self.refreshCursorUsageState()
-                self.startCursorUsageMonitoringIfNeeded()
-            } catch {
-                self.cursorUsageConnectionState = await self.cursorUsageOAuthManager.state
-                self.onStatusMessage?("Cursor connect failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    func disconnectCursorUsage() {
-        cursorUsageMonitorTask?.cancel()
-        cursorUsageMonitorTask = nil
-        cursorUsageSnapshot = nil
-
-        Task { [weak self] in
-            guard let self else { return }
-            await self.cursorUsageOAuthManager.disconnect()
-            self.cursorUsageConnectionState = await self.cursorUsageOAuthManager.state
-            self.onStatusMessage?("Cursor disconnected.")
         }
     }
 

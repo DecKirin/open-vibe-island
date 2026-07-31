@@ -1,192 +1,232 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import OpenIslandCore
 
 struct CursorUsageTests {
-    @Test
-    func cursorUsageParserReturnsEmptySnapshotForModernUsageBasedPricingAccount() throws {
-        // Verified live response shape from a real Team-plan (usage-based
-        // pricing) account: every maxRequestUsage field is null.
-        let json = """
-        {"gpt-4":{"numRequests":0,"numRequestsTotal":0,"numTokens":0,"maxTokenUsage":null,"maxRequestUsage":null},"startOfMonth":"2026-07-02T13:39:40.000Z"}
-        """
-        let snapshot = try CursorUsageParser.snapshot(from: Data(json.utf8))
+    // MARK: - CursorChecksum
 
+    @Test
+    func checksumEmbedsMachineIdAndMacMachineIdVerbatim() {
+        let checksum = CursorChecksum.generate(machineId: "machine-id-value", macMachineId: "mac-machine-id-value")
+        #expect(checksum.contains("machine-id-value/mac-machine-id-value"))
+        // 8-character base64url-encoded timestamp prefix precedes the IDs.
+        #expect(checksum.count == 8 + "machine-id-value".count + 1 + "mac-machine-id-value".count)
+    }
+
+    @Test
+    func checksumOmitsSlashWhenMacMachineIdMissing() {
+        let checksum = CursorChecksum.generate(machineId: "machine-id-value", macMachineId: nil)
+        #expect(checksum == "\(checksum.prefix(8))machine-id-value")
+        #expect(!checksum.contains("/"))
+    }
+
+    // MARK: - CursorUsageResponseParser
+
+    @Test
+    func parserExtractsPercentagesFromEmbeddedSummarySentences() {
+        // The real response is Connect-RPC-framed protobuf with binary
+        // field markers surrounding these exact sentences (verified live
+        // against a real account: "You've used 48% of your included total
+        // usage" / "...0% of your included API usage"). Binary framing
+        // bytes are stand-ins here — what's under test is the regex
+        // extraction, not exact byte-for-byte protobuf reproduction.
+        var bytes: [UInt8] = [0x0A, 0x63, 0x01, 0x02, 0xFF, 0x00]
+        bytes.append(contentsOf: Array("You've hit your usage limit".utf8))
+        bytes.append(contentsOf: [0x5A, 0x2C])
+        bytes.append(contentsOf: Array("You've used 48% of your included total usage".utf8))
+        bytes.append(contentsOf: [0x62, 0x29])
+        bytes.append(contentsOf: Array("You've used 0% of your included API usage".utf8))
+        bytes.append(contentsOf: [0x6A, 0x07])
+
+        let snapshot = CursorUsageResponseParser.snapshot(from: Data(bytes), capturedAt: nil)
+
+        #expect(snapshot.windows.count == 2)
+        #expect(snapshot.windows.first(where: { $0.label == "Total" })?.roundedUsedPercentage == 48)
+        #expect(snapshot.windows.first(where: { $0.label == "API" })?.roundedUsedPercentage == 0)
+    }
+
+    @Test
+    func parserReturnsEmptySnapshotWhenSummaryStringsAbsent() {
+        let data = Data("unrelated protobuf noise with no usage sentences".utf8)
+        let snapshot = CursorUsageResponseParser.snapshot(from: data, capturedAt: nil)
         #expect(snapshot.isEmpty)
-        #expect(snapshot.windows.isEmpty)
-        #expect(snapshot.startOfMonth != nil)
     }
 
-    @Test
-    func cursorUsageParserComputesPercentageForPopulatedQuota() throws {
-        let json = """
-        {"gpt-4":{"numRequests":125,"numRequestsTotal":125,"numTokens":0,"maxTokenUsage":null,"maxRequestUsage":500},"startOfMonth":"2026-07-02T13:39:40.000Z"}
-        """
-        let snapshot = try CursorUsageParser.snapshot(from: Data(json.utf8))
-
-        #expect(!snapshot.isEmpty)
-        #expect(snapshot.windows.count == 1)
-        #expect(snapshot.windows.first?.modelName == "gpt-4")
-        #expect(snapshot.windows.first?.numRequests == 125)
-        #expect(snapshot.windows.first?.maxRequestUsage == 500)
-        #expect(snapshot.windows.first?.roundedUsedPercentage == 25)
-    }
+    // MARK: - CursorLocalSession
 
     @Test
-    func cursorUsageParserSkipsModelsWithoutAUsableQuota() throws {
-        let json = """
-        {
-          "gpt-4": {"numRequests": 10, "maxRequestUsage": null},
-          "sonnet": {"numRequests": 30, "maxRequestUsage": 100},
-          "unused-model": {"numRequests": 0, "maxRequestUsage": 0}
-        }
-        """
-        let snapshot = try CursorUsageParser.snapshot(from: Data(json.utf8))
+    func readCredentialsParsesTokenAndMachineIdsFromLocalFixtures() throws {
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        #expect(snapshot.windows.count == 1)
-        #expect(snapshot.windows.first?.modelName == "sonnet")
-    }
+        try writeStateVscdb(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/state.vscdb"),
+            accessToken: "fixture-access-token"
+        )
+        try writeStorageJSON(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/storage.json"),
+            machineId: "fixture-machine-id",
+            macMachineId: "fixture-mac-machine-id"
+        )
+        try writeCLIConfig(at: root.appendingPathComponent(".cursor/cli-config.json"), teamID: 12345)
 
-    @Test
-    func keychainStoreRoundTripsSaveReadDelete() throws {
-        let store = KeychainStore()
-        let service = "app.openisland.tests.\(UUID().uuidString)"
-        let account = "test-account"
-
-        defer { store.delete(service: service, account: account) }
-
-        #expect(store.read(service: service, account: account) == nil)
-
-        try store.save(service: service, account: account, data: Data("first".utf8))
-        #expect(store.read(service: service, account: account) == Data("first".utf8))
-
-        // save() upserts rather than throwing on an existing item.
-        try store.save(service: service, account: account, data: Data("second".utf8))
-        #expect(store.read(service: service, account: account) == Data("second".utf8))
-
-        #expect(store.delete(service: service, account: account))
-        #expect(store.read(service: service, account: account) == nil)
-    }
-
-    @Test
-    func oauthManagerLoginPollsThrough404sThenPersistsTokens() async throws {
-        let (keychain, accessService, refreshService, account) = makeIsolatedKeychain()
-        let attempts = Counter()
-        let openedURLs = URLBox()
-
-        let manager = CursorUsageOAuthManager(
-            keychain: keychain,
-            accessTokenService: accessService,
-            refreshTokenService: refreshService,
-            keychainAccount: account,
-            openURL: { url in openedURLs.append(url) },
-            transport: { request in
-                #expect(request.url?.host == "api2.cursor.sh")
-                let attempt = attempts.increment()
-                if attempt < 3 {
-                    return (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
-                }
-                let body = Data(#"{"accessToken":"\#(makeFakeJWT(expiresIn: 3600))","refreshToken":"refresh-token-value"}"#.utf8)
-                return (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-            }
+        let session = CursorLocalSession(
+            applicationSupportDirectory: root.appendingPathComponent("Cursor"),
+            cursorHomeDirectory: root.appendingPathComponent(".cursor")
         )
 
-        try await manager.login(pollTimeout: 30)
-
-        #expect(await manager.state == .connected)
-        #expect(openedURLs.values.count == 1)
-        #expect(openedURLs.values.first?.host == "cursor.com")
-        #expect(openedURLs.values.first?.path == "/loginDeepControl")
-        #expect(attempts.value == 3)
-
-        keychain.delete(service: accessService, account: account)
-        keychain.delete(service: refreshService, account: account)
+        let credentials = try #require(session.readCredentials())
+        #expect(credentials.accessToken == "fixture-access-token")
+        #expect(credentials.machineId == "fixture-machine-id")
+        #expect(credentials.macMachineId == "fixture-mac-machine-id")
+        #expect(credentials.teamID == "12345")
     }
 
     @Test
-    func oauthManagerEnsureValidAccessTokenRefreshesExpiredToken() async throws {
-        let (keychain, accessService, refreshService, account) = makeIsolatedKeychain()
-        try keychain.save(service: accessService, account: account, data: Data(makeFakeJWT(expiresIn: -60).utf8))
-        try keychain.save(service: refreshService, account: account, data: Data("old-refresh-token".utf8))
-
-        let refreshCalls = Counter()
-        let manager = CursorUsageOAuthManager(
-            keychain: keychain,
-            accessTokenService: accessService,
-            refreshTokenService: refreshService,
-            keychainAccount: account,
-            openURL: { _ in },
-            transport: { request in
-                _ = refreshCalls.increment()
-                #expect(request.url?.path == "/auth/exchange_user_api_key")
-                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer old-refresh-token")
-                let body = Data(#"{"accessToken":"\#(makeFakeJWT(expiresIn: 3600))","refreshToken":"new-refresh-token"}"#.utf8)
-                return (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-            }
+    func readCredentialsReturnsNilWhenStateVscdbMissing() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-cursor-missing-\(UUID().uuidString)", isDirectory: true)
+        let session = CursorLocalSession(
+            applicationSupportDirectory: root.appendingPathComponent("Cursor"),
+            cursorHomeDirectory: root.appendingPathComponent(".cursor")
         )
-
-        let token = try await manager.ensureValidAccessToken()
-
-        #expect(refreshCalls.value == 1)
-        #expect(!token.isEmpty)
-        #expect(keychain.read(service: refreshService, account: account) == Data("new-refresh-token".utf8))
-        #expect(await manager.state == .connected)
-
-        keychain.delete(service: accessService, account: account)
-        keychain.delete(service: refreshService, account: account)
+        #expect(session.readCredentials() == nil)
     }
 
-    @Test
-    func oauthManagerClearsTokensAndSurfacesReauthRequiredOn401() async throws {
-        let (keychain, accessService, refreshService, account) = makeIsolatedKeychain()
-        try keychain.save(service: accessService, account: account, data: Data(makeFakeJWT(expiresIn: -60).utf8))
-        try keychain.save(service: refreshService, account: account, data: Data("revoked-refresh-token".utf8))
+    // MARK: - CursorUsageLoader
 
-        let manager = CursorUsageOAuthManager(
-            keychain: keychain,
-            accessTokenService: accessService,
-            refreshTokenService: refreshService,
-            keychainAccount: account,
-            openURL: { _ in },
-            transport: { request in
-                (Data(), HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!)
-            }
+    @Test
+    func loaderReturnsNilWithoutAnyNetworkCallWhenNoLocalSession() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-cursor-loader-\(UUID().uuidString)", isDirectory: true)
+        let session = CursorLocalSession(
+            applicationSupportDirectory: root.appendingPathComponent("Cursor"),
+            cursorHomeDirectory: root.appendingPathComponent(".cursor")
         )
 
-        await #expect(throws: CursorUsageOAuthManager.OAuthError.self) {
-            try await manager.ensureValidAccessToken()
+        let transportCalled = Counter()
+        let snapshot = try await CursorUsageLoader.load(session: session) { request in
+            transportCalled.increment()
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         }
 
-        #expect(await manager.state == .reauthRequired)
-        #expect(keychain.read(service: accessService, account: account) == nil)
-        #expect(keychain.read(service: refreshService, account: account) == nil)
+        #expect(snapshot == nil)
+        #expect(transportCalled.value == 0)
+    }
+
+    @Test
+    func loaderSendsBearerAndChecksumHeadersAndParsesResponse() async throws {
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeStateVscdb(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/state.vscdb"),
+            accessToken: "fixture-access-token"
+        )
+        try writeStorageJSON(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/storage.json"),
+            machineId: "fixture-machine-id",
+            macMachineId: "fixture-mac-machine-id"
+        )
+
+        let session = CursorLocalSession(
+            applicationSupportDirectory: root.appendingPathComponent("Cursor"),
+            cursorHomeDirectory: root.appendingPathComponent(".cursor")
+        )
+
+        let responseBody = Data("You've used 33% of your included total usage".utf8)
+        let snapshot = try await CursorUsageLoader.load(session: session) { request in
+            #expect(request.url?.absoluteString == "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-access-token")
+            #expect(request.value(forHTTPHeaderField: "x-cursor-checksum")?.contains("fixture-machine-id/fixture-mac-machine-id") == true)
+            return (responseBody, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+
+        let unwrapped = try #require(snapshot)
+        #expect(unwrapped.windows.first(where: { $0.label == "Total" })?.roundedUsedPercentage == 33)
+    }
+
+    @Test
+    func loaderReturnsNilOnUnauthorizedResponse() async throws {
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeStateVscdb(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/state.vscdb"),
+            accessToken: "fixture-access-token"
+        )
+        try writeStorageJSON(
+            at: root.appendingPathComponent("Cursor/User/globalStorage/storage.json"),
+            machineId: "fixture-machine-id",
+            macMachineId: nil
+        )
+
+        let session = CursorLocalSession(
+            applicationSupportDirectory: root.appendingPathComponent("Cursor"),
+            cursorHomeDirectory: root.appendingPathComponent(".cursor")
+        )
+
+        let snapshot = try await CursorUsageLoader.load(session: session) { request in
+            (Data(), HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!)
+        }
+
+        #expect(snapshot == nil)
     }
 }
 
-private func makeIsolatedKeychain() -> (KeychainStore, String, String, String) {
-    let suffix = UUID().uuidString
-    return (
-        KeychainStore(),
-        "app.openisland.tests.cursor-access.\(suffix)",
-        "app.openisland.tests.cursor-refresh.\(suffix)",
-        "test-cursor-user"
-    )
+// MARK: - Fixture helpers
+
+private func makeFixtureRoot() throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("open-island-cursor-usage-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
 }
 
-/// Builds a syntactically valid (unsigned) JWT with a given `exp` claim so
-/// expiry-driven logic can be exercised without a real Cursor token.
-private func makeFakeJWT(expiresIn seconds: TimeInterval) -> String {
-    let header = base64URLEncode(Data(#"{"alg":"none"}"#.utf8))
-    let exp = Int(Date().addingTimeInterval(seconds).timeIntervalSince1970)
-    let payload = base64URLEncode(Data(#"{"exp":\#(exp)}"#.utf8))
-    return "\(header).\(payload).signature"
+private func writeStateVscdb(at url: URL, accessToken: String) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK else {
+        Issue.record("Failed to create fixture state.vscdb")
+        return
+    }
+    defer { sqlite3_close(db) }
+
+    guard sqlite3_exec(db, "CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB);", nil, nil, nil) == SQLITE_OK else {
+        Issue.record("Failed to create ItemTable schema")
+        return
+    }
+
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(db, "INSERT INTO ItemTable (key, value) VALUES (?, ?)", -1, &statement, nil) == SQLITE_OK else {
+        Issue.record("Failed to prepare insert")
+        return
+    }
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, "cursorAuth/accessToken", -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_text(statement, 2, accessToken, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+        Issue.record("Failed to insert fixture row")
+        return
+    }
 }
 
-private func base64URLEncode(_ data: Data) -> String {
-    data.base64EncodedString()
-        .replacingOccurrences(of: "+", with: "-")
-        .replacingOccurrences(of: "/", with: "_")
-        .replacingOccurrences(of: "=", with: "")
+private func writeStorageJSON(at url: URL, machineId: String, macMachineId: String?) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    var payload: [String: Any] = ["telemetry.machineId": machineId]
+    if let macMachineId {
+        payload["telemetry.macMachineId"] = macMachineId
+    }
+    try JSONSerialization.data(withJSONObject: payload).write(to: url)
+}
+
+private func writeCLIConfig(at url: URL, teamID: Int) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let payload: [String: Any] = ["authInfo": ["teamId": teamID]]
+    try JSONSerialization.data(withJSONObject: payload).write(to: url)
 }
 
 /// Mutable counter shared with a `@Sendable` transport closure. Tests only
@@ -199,13 +239,5 @@ private final class Counter: @unchecked Sendable {
     func increment() -> Int {
         value += 1
         return value
-    }
-}
-
-private final class URLBox: @unchecked Sendable {
-    private(set) var values: [URL] = []
-
-    func append(_ url: URL) {
-        values.append(url)
     }
 }

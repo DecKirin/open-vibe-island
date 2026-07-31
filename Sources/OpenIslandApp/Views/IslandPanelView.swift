@@ -922,21 +922,17 @@ struct IslandPanelView: View {
             })
         }
 
-        // No toggle here — connecting Cursor (Settings) is itself the
-        // opt-in, same as Claude. Cursor's usage-based-pricing plans report
-        // null quota fields on the only endpoint available here, so an empty
-        // snapshot is the common case, not a bug — those windows simply
-        // never enter the cycle until Cursor populates real data.
-        if let snapshot = model.cursorUsageSnapshot,
+        if model.showCursorUsage,
+           let snapshot = model.cursorUsageSnapshot,
            snapshot.isEmpty == false {
             entries.append(contentsOf: snapshot.windows.map { window in
                 UsageCycleEntry(
-                    id: "cursor-\(window.modelName)",
+                    id: "cursor-\(window.label)",
                     providerId: "cursor",
                     providerTitle: "Cursor",
                     window: UsageWindowPresentation(
-                        id: "cursor-\(window.modelName)",
-                        label: window.modelName,
+                        id: "cursor-\(window.label)",
+                        label: window.label,
                         usedPercentage: window.usedPercentage,
                         resetsAt: nil
                     )
