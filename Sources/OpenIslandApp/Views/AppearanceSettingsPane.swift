@@ -1022,10 +1022,18 @@ private struct SessionListPanelPreview: View {
 
     /// This static preview never animates, so it can construct the shape
     /// directly rather than going through the live island's morph-target
-    /// machinery. `NotchShape.opened`/`V6ClosedPillShape()` are the same two
-    /// shapes `OpenedIslandSurfaceShape` used to dispatch to internally.
+    /// machinery. `NotchShape.opened`/`V6ClosedPillShape(cornerRadius:)` are
+    /// the same two shapes `OpenedIslandSurfaceShape` used to dispatch to
+    /// internally. The explicit corner radius here matters: this preview
+    /// panel is tall (`.fixedSize(vertical: true)`, sized to its session
+    /// content), and `V6ClosedPillShape`'s `cornerRadius: nil` default falls
+    /// back to `rect.height / 2` — fine for the actual short closed pill,
+    /// but a huge radius here, which is what produced the distorted
+    /// near-circular bottom edge.
     private var surfaceShape: AnyShape {
-        profile == .notch ? AnyShape(NotchShape.opened) : AnyShape(V6ClosedPillShape())
+        profile == .notch
+            ? AnyShape(NotchShape.opened)
+            : AnyShape(V6ClosedPillShape(cornerRadius: NotchShape.openedBottomRadius))
     }
 
     private var sideInset: CGFloat {
