@@ -59,6 +59,8 @@ The project is past MVP and welcomes new ideas and creative directions, but the 
 - Claude-only assumptions that weaken the multi-agent model
 - Anything that breaks local-first (remote-server dependencies, cloud-only paths)
 
+**Exception:** the Cursor usage badge calls Cursor's own cloud API (`api2.cursor.sh`) — Cursor exposes no local usage/quota data by any other means. This is a deliberate, explicitly user-approved exception, not a precedent for defaulting to cloud dependencies elsewhere.
+
 ## Release
 
 - Triggered by pushing a `v*` tag to `main`. CI builds, signs, notarizes, publishes the DMG. Don't create the GitHub release manually — edit the draft CI produces.

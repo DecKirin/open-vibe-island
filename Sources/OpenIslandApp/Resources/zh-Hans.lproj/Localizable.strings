@@ -27,6 +27,12 @@
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
+"settings.general.showCursorUsage" = "显示 Cursor 用量";
+"settings.general.connectCursor" = "连接";
+"settings.general.reconnectCursor" = "重新连接";
+"settings.general.disconnect" = "断开连接";
+"settings.general.disconnectConfirmTitle" = "断开 Cursor 连接？";
+"settings.general.disconnectConfirmAction" = "断开连接";
 "settings.general.completionReply" = "在完成卡片中回复";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
@@ -37,6 +43,7 @@
 "settings.general.uninstallConfirmMessage.claude" = "这将从 Claude Code 中移除 Open Island 的 hooks。你可以随时重新安装。";
 "settings.general.uninstallConfirmMessage.codex" = "这将从 Codex 中移除 Open Island 的 hooks。你可以随时重新安装。";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "这将移除 Claude 用量桥接。你可以随时重新安装。";
+"settings.general.disconnectConfirmMessage.cursorUsage" = "这将移除已保存的 Cursor 登录信息。你可以随时重新连接。";
 "settings.general.cancel" = "取消";
 "settings.general.language" = "语言";
 "settings.general.languageSystem" = "跟随系统";
@@ -144,6 +151,11 @@
 "setup.usageBridge" = "Claude 用量桥接";
 "setup.usageBridgeReady" = "已安装";
 "setup.usageBridgeDesc" = "在本地追踪 Claude API 用量";
+"setup.cursorUsageBridge" = "Cursor 用量";
+"setup.cursorUsageConnected" = "已连接";
+"setup.cursorUsageSessionExpired" = "会话已过期";
+"setup.cursorUsageUnavailable" = "暂时不可用";
+"setup.cursorUsageNoData" = "此账户未报告配额数据。";
 "setup.optional" = "可选";
 "setup.permissionsTitle" = "辅助功能";
 "setup.permissionsDesc" = "Open Island 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";

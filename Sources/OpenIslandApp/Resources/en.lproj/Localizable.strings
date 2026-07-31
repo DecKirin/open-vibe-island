@@ -27,6 +27,12 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
+"settings.general.showCursorUsage" = "Show Cursor usage";
+"settings.general.connectCursor" = "Connect";
+"settings.general.reconnectCursor" = "Reconnect";
+"settings.general.disconnect" = "Disconnect";
+"settings.general.disconnectConfirmTitle" = "Disconnect Cursor?";
+"settings.general.disconnectConfirmAction" = "Disconnect";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
@@ -37,6 +43,7 @@
 "settings.general.uninstallConfirmMessage.claude" = "This will remove Open Island hooks from Claude Code. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
+"settings.general.disconnectConfirmMessage.cursorUsage" = "This will remove your saved Cursor sign-in. You can reconnect at any time.";
 "settings.general.cancel" = "Cancel";
 "settings.general.language" = "Language";
 "settings.general.languageSystem" = "System";
@@ -144,6 +151,11 @@
 "setup.usageBridge" = "Claude Usage Bridge";
 "setup.usageBridgeReady" = "Installed";
 "setup.usageBridgeDesc" = "Tracks Claude API usage locally";
+"setup.cursorUsageBridge" = "Cursor Usage";
+"setup.cursorUsageConnected" = "Connected";
+"setup.cursorUsageSessionExpired" = "Session expired";
+"setup.cursorUsageUnavailable" = "Temporarily unavailable";
+"setup.cursorUsageNoData" = "No quota data reported for this account.";
 "setup.optional" = "Optional";
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";

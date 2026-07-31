@@ -925,6 +925,33 @@ struct IslandPanelView: View {
             }
         }
 
+        // Cursor's usage-based-pricing plans report null quota fields on the
+        // only endpoint available here, so an empty snapshot is the common
+        // case, not a bug — the chip simply stays hidden until Cursor
+        // populates real data for this account.
+        if model.showCursorUsage,
+           let snapshot = model.cursorUsageSnapshot,
+           snapshot.isEmpty == false {
+            let windows = snapshot.windows.map { window in
+                UsageWindowPresentation(
+                    id: "cursor-\(window.modelName)",
+                    label: window.modelName,
+                    usedPercentage: window.usedPercentage,
+                    resetsAt: nil
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "cursor",
+                        title: "Cursor",
+                        windows: windows
+                    )
+                )
+            }
+        }
+
         return providers
     }
 
@@ -1139,6 +1166,8 @@ private struct UsageProviderPresentation: Identifiable {
             "Cl"
         case "codex":
             "Cx"
+        case "cursor":
+            "Cu"
         default:
             String(title.prefix(2))
         }
