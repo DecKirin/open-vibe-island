@@ -65,6 +65,11 @@
 "settings.appearance.centerLabel.agentAction" = "Agent · action";
 "settings.appearance.centerLabel.sessionName" = "Session name";
 "settings.appearance.centerLabel.off" = "Off";
+"settings.appearance.surfaceMaterial.title" = "03 · Surface";
+"settings.appearance.surfaceMaterial.note" = "Liquid Glass requires macOS 26 or later.";
+"settings.appearance.surfaceMaterial.translucent" = "Translucent";
+"settings.appearance.surfaceMaterial.gradient" = "Gradient";
+"settings.appearance.surfaceMaterial.solid" = "Solid black";
 "settings.appearance.notchPart.title" = "Notch";
 "settings.appearance.sessionListPart.title" = "Session list";
 "settings.appearance.sessionPreview" = "Preview";

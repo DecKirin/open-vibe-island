@@ -65,6 +65,11 @@
 "settings.appearance.centerLabel.agentAction" = "代理 · 动作";
 "settings.appearance.centerLabel.sessionName" = "会话名";
 "settings.appearance.centerLabel.off" = "关闭";
+"settings.appearance.surfaceMaterial.title" = "03 · 材质";
+"settings.appearance.surfaceMaterial.note" = "液态玻璃效果需要 macOS 26 或更高版本。";
+"settings.appearance.surfaceMaterial.translucent" = "半透明";
+"settings.appearance.surfaceMaterial.gradient" = "渐变";
+"settings.appearance.surfaceMaterial.solid" = "纯黑";
 "settings.appearance.notchPart.title" = "刘海";
 "settings.appearance.sessionListPart.title" = "会话列表";
 "settings.appearance.sessionPreview" = "预览";

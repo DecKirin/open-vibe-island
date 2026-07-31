@@ -126,6 +126,7 @@ struct AppearanceSettingsPane: View {
             previewSection
             rightSlotSection
             centerLabelSection
+            surfaceMaterialSection
         }
     }
 
@@ -285,6 +286,79 @@ struct AppearanceSettingsPane: View {
                         .fill(Color.white.opacity(0.04))
                     icon()
                 }
+                .frame(height: 56)
+
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
+                        lineWidth: selected ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 03 · Surface material
+
+    /// Liquid Glass is macOS 26+ only — hidden below that version rather
+    /// than shown as a no-op toggle, since `IslandPanelView` always falls
+    /// back to the solid fill regardless of this preference on older macOS.
+    @ViewBuilder
+    private var surfaceMaterialSection: some View {
+        if #available(macOS 26, *) {
+            sectionHeader(
+                title: lang.t("settings.appearance.surfaceMaterial.title"),
+                note: lang.t("settings.appearance.surfaceMaterial.note")
+            )
+
+            HStack(spacing: 12) {
+                surfaceMaterialCard(.translucent, title: lang.t("settings.appearance.surfaceMaterial.translucent"))
+                surfaceMaterialCard(.gradient, title: lang.t("settings.appearance.surfaceMaterial.gradient"))
+                surfaceMaterialCard(.solid, title: lang.t("settings.appearance.surfaceMaterial.solid"))
+            }
+        }
+    }
+
+    private func surfaceMaterialCard(_ option: IslandSurfaceMaterial, title: String) -> some View {
+        let selected = editingPreferences.surfaceMaterial == option
+        return Button {
+            model.updateAppearancePreferences(for: editingProfile) { $0.surfaceMaterial = option }
+        } label: {
+            VStack(spacing: 10) {
+                Group {
+                    switch option {
+                    case .translucent:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                    case .gradient:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.black, Color.white.opacity(0.10)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    case .solid:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.9))
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(option == .solid ? 0.08 : 0.18), lineWidth: 1)
+                )
                 .frame(height: 56)
 
                 Text(title)
@@ -924,7 +998,9 @@ private struct SessionListPanelPreview: View {
     }
 
     private var preferredPanelWidth: CGFloat {
-        profile == .notch ? 540 : 520
+        // Mirrors OverlayPanelController's preferredNotchOpenedPanelWidth/
+        // preferredTopBarOpenedPanelWidth.
+        profile == .notch ? 640 : 620
     }
 
     private func panel(width: CGFloat) -> some View {
@@ -944,8 +1020,20 @@ private struct SessionListPanelPreview: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var surfaceShape: OpenedIslandSurfaceShape {
-        OpenedIslandSurfaceShape(topProfile: profile == .notch ? .notch : .topBar)
+    /// This static preview never animates, so it can construct the shape
+    /// directly rather than going through the live island's morph-target
+    /// machinery. `NotchShape.opened`/`V6ClosedPillShape(cornerRadius:)` are
+    /// the same two shapes `OpenedIslandSurfaceShape` used to dispatch to
+    /// internally. The explicit corner radius here matters: this preview
+    /// panel is tall (`.fixedSize(vertical: true)`, sized to its session
+    /// content), and `V6ClosedPillShape`'s `cornerRadius: nil` default falls
+    /// back to `rect.height / 2` — fine for the actual short closed pill,
+    /// but a huge radius here, which is what produced the distorted
+    /// near-circular bottom edge.
+    private var surfaceShape: AnyShape {
+        profile == .notch
+            ? AnyShape(NotchShape.opened)
+            : AnyShape(V6ClosedPillShape(cornerRadius: NotchShape.openedBottomRadius))
     }
 
     private var sideInset: CGFloat {

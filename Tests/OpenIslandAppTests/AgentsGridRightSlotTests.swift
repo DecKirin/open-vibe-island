@@ -105,16 +105,16 @@ struct AgentsGridRightSlotTests {
         #expect(cells[2] == Self.cellFor(sessionC))
     }
 
-    /// Sessions beyond the 9-slot threshold collapse into a single trailing
+    /// Sessions beyond the 12-slot threshold collapse into a single trailing
     /// overflow cell showing the remainder count.
     @Test
-    func moreThanNineSessionsFoldIntoOverflow() {
+    func moreThanTwelveSessionsFoldIntoOverflow() {
         let model = AppModel()
         model.islandRightSlot = .agents
         let now = Date(timeIntervalSince1970: 200_000)
 
         var sessions: [AgentSession] = []
-        for i in 0..<12 {
+        for i in 0..<15 {
             sessions.append(makeSession(
                 id: "s-\(i)",
                 firstSeenAt: now.addingTimeInterval(Double(i)),
@@ -127,9 +127,9 @@ struct AgentsGridRightSlotTests {
             Issue.record("Expected .agents right-slot content")
             return
         }
-        #expect(cells.count == 8)
-        if case let .overflow(n) = cells[7] {
-            #expect(n == 5) // 12 total - 7 visible session cells = 5
+        #expect(cells.count == 12)
+        if case let .overflow(n) = cells[11] {
+            #expect(n == 4) // 15 total - 11 visible session cells = 4
         } else {
             Issue.record("Expected last cell to be .overflow")
         }

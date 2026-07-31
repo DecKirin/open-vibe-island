@@ -61,6 +61,20 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var surfaceMaterial: IslandSurfaceMaterial = .translucent
+}
+
+/// How the island surface renders. `.translucent` and `.gradient` both
+/// require Liquid Glass (macOS 26+) and fall back to `.solid` automatically
+/// on older macOS regardless of this preference.
+enum IslandSurfaceMaterial: String, CaseIterable, Identifiable, Sendable {
+    case translucent
+    /// Solid black fading into Liquid Glass further down the shape — black
+    /// where it borders the physical notch, translucent everywhere else.
+    case gradient
+    case solid
+
+    var id: String { rawValue }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {

@@ -389,6 +389,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var islandSurfaceMaterial: IslandSurfaceMaterial {
+        get { appearancePreferences(for: activeAppearanceProfile).surfaceMaterial }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.surfaceMaterial = newValue } }
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -438,6 +443,7 @@ final class AppModel {
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(preferences.surfaceMaterial.rawValue, forKey: Self.appearanceDefaultsKey(profile, "surfaceMaterial"))
     }
 
     // MARK: - Watch Notification
@@ -588,7 +594,10 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            surfaceMaterial: IslandSurfaceMaterial(
+                rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "surfaceMaterial")) ?? ""
+            ) ?? .translucent
         )
     }
 
@@ -928,12 +937,16 @@ final class AppModel {
                 if ta != tb { return ta < tb }
                 return a.id < b.id
             }
+            // Matches `V6RightSlotView.balancedRows`'s hand-tuned table,
+            // which holds up to 12 cells (two rows of 6) before the layout
+            // has no good shape left to offer — beyond that, fold to a
+            // single overflow tile rather than a cramped/illegible grid.
             var cells: [AgentGridCell] = []
-            if ordered.count <= 9 {
+            if ordered.count <= 12 {
                 cells = ordered.map(Self.agentsGridCell(for:))
             } else {
-                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
-                cells.append(.overflow(ordered.count - 7))
+                cells = ordered.prefix(11).map(Self.agentsGridCell(for:))
+                cells.append(.overflow(ordered.count - 11))
             }
             return cells.isEmpty ? nil : .agents(cells)
         }

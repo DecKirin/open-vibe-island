@@ -2,12 +2,43 @@ import AppKit
 import Foundation
 import Observation
 import OpenIslandCore
+import SwiftUI
 
 @MainActor
 @Observable
 final class OverlayUICoordinator {
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+
+    // MARK: - Transition animations
+    //
+    // Owned here, not by the view, because the Liquid Glass morph
+    // (`IslandPanelView.islandMorphSurface`) needs the `notchStatus`
+    // mutation itself wrapped in an explicit `withAnimation` to animate
+    // reliably — a passive `.animation(value:)` modifier elsewhere in the
+    // view tree isn't shown to reliably drive glass insert/remove
+    // transitions the way it drives ordinary opacity/scale. `withAnimation`
+    // is a plain SwiftUI function, not view-only, so it's fine to call from
+    // here; this does not reintroduce AppKit-level animation — the actual
+    // `NSPanel` frame is still set synchronously in `OverlayPanelController`.
+    private static let openAnimation = Animation.spring(response: 0.55, dampingFraction: 0.6)
+    // Underdamped (dampingFraction < 1) springs overshoot their target
+    // before settling — fine when *opening* (springs past the opened size,
+    // a nice pop), but when *closing* it meant the pill shrank smaller than
+    // its final size and bounced back up to it, which reads as wrong rather
+    // than playful since the pill has one exact correct size to land on.
+    // `.smooth` is SwiftUI's no-overshoot preset, so it settles into the
+    // pill's size directly.
+    private static let closeAnimation = Animation.smooth(duration: 0.4)
+    private static let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
+
+    private static func transitionAnimation(for status: NotchStatus) -> Animation {
+        switch status {
+        case .opened:  return openAnimation
+        case .closed:  return closeAnimation
+        case .popping: return popAnimation
+        }
+    }
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
@@ -172,10 +203,14 @@ final class OverlayUICoordinator {
 
     /// Coordinates overlay transitions.
     ///
-    /// The window stays at a fixed (opened) size at all times.  All visual
-    /// transitions — shape morphing, content fade, corner radius — are
-    /// driven purely by SwiftUI `.animation()` modifiers reacting to
-    /// `notchStatus` changes.  No AppKit animation, no window resize.
+    /// The window stays at a fixed (opened) size at all times — no AppKit
+    /// animation, no window resize; `overlayPanelController.setInteractive`/
+    /// `.show` below are synchronous AppKit calls, deliberately left outside
+    /// the `withAnimation` closure. All visual transitions (shape morph,
+    /// content fade) are SwiftUI-side only, driven by wrapping the
+    /// `notchStatus` mutation itself in an explicit `withAnimation` — see
+    /// the note on `transitionAnimation(for:)` above for why a passive
+    /// `.animation(value:)` modifier isn't used instead.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -195,9 +230,11 @@ final class OverlayUICoordinator {
             appModel?.measuredNotificationContentHeight = 0
         }
 
-        islandSurface = surface
-        notchOpenReason = reason
-        notchStatus = status
+        withAnimation(Self.transitionAnimation(for: status)) {
+            islandSurface = surface
+            notchOpenReason = reason
+            notchStatus = status
+        }
         overlayPanelController.setInteractive(interactive)
 
         if status == .opened, let appModel {
@@ -213,11 +250,15 @@ final class OverlayUICoordinator {
 
     func notchPop() {
         guard notchStatus == .closed else { return }
-        islandSurface = .sessionList()
-        notchStatus = .popping
+        withAnimation(Self.popAnimation) {
+            islandSurface = .sessionList()
+            notchStatus = .popping
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard self?.notchStatus == .popping else { return }
-            self?.notchStatus = .closed
+            guard let self, self.notchStatus == .popping else { return }
+            withAnimation(Self.closeAnimation) {
+                self.notchStatus = .closed
+            }
         }
     }
 

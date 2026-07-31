@@ -12,14 +12,16 @@ struct AgentsGridLayoutTests {
         #expect(V6RightSlotView.balancedRows(1) == [1])
         #expect(V6RightSlotView.balancedRows(2) == [2])
         #expect(V6RightSlotView.balancedRows(3) == [3])
-        #expect(V6RightSlotView.balancedRows(4) == [2, 2])
-        #expect(V6RightSlotView.balancedRows(5) == [3, 2])
-        #expect(V6RightSlotView.balancedRows(6) == [3, 3])
+        #expect(V6RightSlotView.balancedRows(4) == [4])
+        #expect(V6RightSlotView.balancedRows(5) == [5])
+        #expect(V6RightSlotView.balancedRows(6) == [6])
         #expect(V6RightSlotView.balancedRows(7) == [4, 3])
         #expect(V6RightSlotView.balancedRows(8) == [4, 4])
-        #expect(V6RightSlotView.balancedRows(9) == [3, 3, 3])
-        #expect(V6RightSlotView.balancedRows(10) == [4, 4])
-        #expect(V6RightSlotView.balancedRows(20) == [4, 4])
+        #expect(V6RightSlotView.balancedRows(9) == [5, 4])
+        #expect(V6RightSlotView.balancedRows(10) == [5, 5])
+        #expect(V6RightSlotView.balancedRows(11) == [6, 5])
+        #expect(V6RightSlotView.balancedRows(12) == [6, 6])
+        #expect(V6RightSlotView.balancedRows(20) == [6, 6])
     }
 
     @Test
@@ -37,12 +39,12 @@ struct AgentsGridLayoutTests {
         func cells(_ n: Int) -> [AgentGridCell] {
             (0..<n).map { _ in .session(color: claude, state: .running) }
         }
-        // n=5 → [3, 2]: max row is 3 cells → 3*8 + 2*2 = 28
-        #expect(V6RightSlotView.intrinsicWidth(of: .agents(cells(5))) == 28)
+        // n=5 → [5]: single row of 5 cells → 5*8 + 4*2 = 48
+        #expect(V6RightSlotView.intrinsicWidth(of: .agents(cells(5))) == 48)
         // n=8 → [4, 4]: 4*8 + 3*2 = 38
         #expect(V6RightSlotView.intrinsicWidth(of: .agents(cells(8))) == 38)
-        // n=9 → [3, 3, 3] with cell 6 / gap 1.5: 3*6 + 2*1.5 = 21
-        #expect(V6RightSlotView.intrinsicWidth(of: .agents(cells(9))) == 21)
+        // n=9 → [5, 4]: max row is 5 cells → 5*8 + 4*2 = 48
+        #expect(V6RightSlotView.intrinsicWidth(of: .agents(cells(9))) == 48)
         // empty grid collapses to zero
         #expect(V6RightSlotView.intrinsicWidth(of: .agents([])) == 0)
     }
