@@ -222,6 +222,13 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    /// When `false`, suppresses this view's own `V6ClosedPillShape` ink
+    /// fill — used when an enclosing container (the live island's morph
+    /// surface) already paints/clips its own background, so the two don't
+    /// stack and mismatch corner curves at the boundary. `IslandPreviewPill`
+    /// (settings tab) keeps the default `true`.
+    var paintsBackground: Bool = true
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -251,8 +258,10 @@ struct V6ClosedPill: View {
         let width = max(minWidth, intrinsic)
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if paintsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -291,8 +300,10 @@ struct V6ClosedPill: View {
         let outer = halfReserve + physicalNotchWidth + halfReserve
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if paintsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -307,6 +318,29 @@ struct V6ClosedPill: View {
             .padding(.horizontal, pad)
         }
         .frame(width: outer, height: height)
+    }
+
+    /// The `.external` layout's intrinsic width, computed the same way
+    /// `externalBody` sizes itself — extracted so callers that need to know
+    /// the closed pill's width *before* rendering it (the live island's
+    /// morph-shape target) can match it exactly, mirroring the existing
+    /// `V6CenterLabelView.intrinsicWidth`/`V6RightSlotView.intrinsicWidth`
+    /// pattern in this file.
+    static func intrinsicWidth(
+        label: String?,
+        rightSlot: IslandRightSlotContent?,
+        height: CGFloat,
+        minWidth: CGFloat
+    ) -> CGFloat {
+        let pad = height / 2
+        let glyphW: CGFloat = 24
+        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
+        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+
+        let labelBlock = (label == nil ? 0 : 6 + labelW)
+        let rightBlock = (rightSlot == nil ? 0 : innerGap + rightW)
+        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
+        return max(minWidth, intrinsic)
     }
 }
 

@@ -377,6 +377,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var islandSurfaceMaterial: IslandSurfaceMaterial {
+        get { appearancePreferences(for: activeAppearanceProfile).surfaceMaterial }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.surfaceMaterial = newValue } }
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -426,6 +431,7 @@ final class AppModel {
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(preferences.surfaceMaterial.rawValue, forKey: Self.appearanceDefaultsKey(profile, "surfaceMaterial"))
     }
 
     // MARK: - Watch Notification
@@ -576,7 +582,10 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            surfaceMaterial: IslandSurfaceMaterial(
+                rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "surfaceMaterial")) ?? ""
+            ) ?? .translucent
         )
     }
 
