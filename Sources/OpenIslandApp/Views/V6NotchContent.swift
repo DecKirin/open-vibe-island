@@ -66,24 +66,30 @@ struct V6RightSlotView: View {
 
     // MARK: Balanced layout algorithm
     //
-    // For each n from 1 to 9, we hand-tune the per-row cell counts so the
+    // For each n from 1 to 12, we hand-tune the per-row cell counts so the
     // matrix reads as a deliberate shape instead of a wrap-at-4-columns grid.
-    // For n >= 10 the AppModel caps the list at 7 sessions + 1 overflow cell,
-    // which lays out as [4,4] — so balancedRows(8) is what actually renders
-    // for all high-count cases in production.
+    // A single row holds up to 6 cells before splitting to two rows (max 6
+    // per row) — the closed pill's width now grows to fit this (see
+    // `macbookIntrinsicWidth`/`intrinsicWidth`) rather than forcing an early
+    // wrap. For n >= 13 the AppModel caps the list at 11 sessions + 1
+    // overflow cell, which lays out as [6,6] — so balancedRows(12) is what
+    // actually renders for all high-count cases in production.
     static func balancedRows(_ n: Int) -> [Int] {
         switch n {
         case ..<1: return []
         case 1: return [1]
         case 2: return [2]
         case 3: return [3]
-        case 4: return [2, 2]
-        case 5: return [3, 2]
-        case 6: return [3, 3]
+        case 4: return [4]
+        case 5: return [5]
+        case 6: return [6]
         case 7: return [4, 3]
         case 8: return [4, 4]
-        case 9: return [3, 3, 3]
-        default: return [4, 4]
+        case 9: return [5, 4]
+        case 10: return [5, 5]
+        case 11: return [6, 5]
+        case 12: return [6, 6]
+        default: return [6, 6]
         }
     }
 
@@ -222,6 +228,13 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    /// When `false`, suppresses this view's own `V6ClosedPillShape` ink
+    /// fill — used when an enclosing container (the live island's morph
+    /// surface) already paints/clips its own background, so the two don't
+    /// stack and mismatch corner curves at the boundary. `IslandPreviewPill`
+    /// (settings tab) keeps the default `true`.
+    var paintsBackground: Bool = true
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -251,8 +264,10 @@ struct V6ClosedPill: View {
         let width = max(minWidth, intrinsic)
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if paintsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -284,15 +299,20 @@ struct V6ClosedPill: View {
         )
     }
 
-    // MARK: MacBook (outer width locked)
+    // MARK: MacBook (grows to fit content)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let outer = Self.macbookIntrinsicWidth(
+            physicalNotchWidth: physicalNotchWidth,
+            rightSlot: rightSlot,
+            height: height
+        )
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if paintsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -307,6 +327,56 @@ struct V6ClosedPill: View {
             .padding(.horizontal, pad)
         }
         .frame(width: outer, height: height)
+    }
+
+    /// The `.external` layout's intrinsic width, computed the same way
+    /// `externalBody` sizes itself — extracted so callers that need to know
+    /// the closed pill's width *before* rendering it (the live island's
+    /// morph-shape target) can match it exactly, mirroring the existing
+    /// `V6CenterLabelView.intrinsicWidth`/`V6RightSlotView.intrinsicWidth`
+    /// pattern in this file.
+    static func intrinsicWidth(
+        label: String?,
+        rightSlot: IslandRightSlotContent?,
+        height: CGFloat,
+        minWidth: CGFloat
+    ) -> CGFloat {
+        let pad = height / 2
+        let glyphW: CGFloat = 24
+        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
+        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+
+        let labelBlock = (label == nil ? 0 : 6 + labelW)
+        let rightBlock = (rightSlot == nil ? 0 : innerGap + rightW)
+        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
+        return max(minWidth, intrinsic)
+    }
+
+    /// The `.macbook` layout's width: at minimum wide enough to wrap the
+    /// physical notch (`44 + notch + 44`, the original fixed formula), but
+    /// grows past that floor when the right-slot content (e.g. a wide
+    /// agents grid) needs more room than the default padding leaves. Content
+    /// used to be squeezed into a hard-locked width regardless of how much
+    /// there was to show; extracted (mirroring `intrinsicWidth` above) so
+    /// `IslandPanelView`'s morph-shape target matches what actually renders.
+    static func macbookIntrinsicWidth(
+        physicalNotchWidth: CGFloat,
+        rightSlot: IslandRightSlotContent?,
+        height: CGFloat
+    ) -> CGFloat {
+        let halfReserve: CGFloat = 44
+        let notchReserve = halfReserve + physicalNotchWidth + halfReserve
+
+        let pad = height / 2
+        let glyphW: CGFloat = 24
+        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+        let rightBlock = (rightSlot == nil ? 0 : innerGap + rightW)
+        // Keeps at least the notch's own width as breathing room between the
+        // glyph and the right slot, even when content pushes the pill wider
+        // than the bare notch-wrapping floor.
+        let contentReserve = pad * 2 + glyphW + rightBlock + physicalNotchWidth
+
+        return max(notchReserve, contentReserve)
     }
 }
 

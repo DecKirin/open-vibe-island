@@ -71,13 +71,6 @@ extension AgentSession {
     }
 }
 
-// MARK: - Animations
-
-private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
-private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
-private let openedSurfaceUnmountDelay: TimeInterval = 0.36
-
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
 
@@ -106,8 +99,6 @@ struct IslandPanelView: View {
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
-    @State private var keepsOpenedSurfaceMounted = false
-    @State private var openedSurfaceMountGeneration: UInt64 = 0
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -117,21 +108,19 @@ struct IslandPanelView: View {
         isOpened
     }
 
-    private var shouldRenderOpenedSurface: Bool {
-        usesOpenedVisualState || keepsOpenedSurfaceMounted
-    }
-
     private var isPopping: Bool {
         model.notchStatus == .popping
     }
 
-    /// Single animation selection based on the current notch status.
-    private var notchTransitionAnimation: Animation {
-        switch model.notchStatus {
-        case .opened:  return openAnimation
-        case .closed:  return closeAnimation
-        case .popping: return popAnimation
-        }
+    /// Scale applied to the whole morph surface. Popping and hover bumps are
+    /// mutually exclusive in practice (popping is a brief, non-interactive
+    /// notification cue), so a single value is enough — no need to layer
+    /// multiple independent `scaleEffect`s the way separate closed/opened
+    /// views once did.
+    private var morphScale: CGFloat {
+        if isPopping { return 1.04 }
+        if !usesOpenedVisualState && isHovering { return IslandChromeMetrics.closedHoverScale }
+        return 1
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -187,12 +176,6 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
-        .onAppear {
-            syncOpenedSurfaceMount(with: model.notchStatus, immediate: true)
-        }
-        .onChange(of: model.notchStatus) { _, status in
-            syncOpenedSurfaceMount(with: status)
-        }
     }
 
     @ViewBuilder
@@ -208,69 +191,248 @@ struct IslandPanelView: View {
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
 
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                if shouldRenderOpenedSurface {
-                    openedSurface(width: openedWidth, height: openedHeight)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .allowsHitTesting(usesOpenedVisualState)
+        islandMorphSurface(openedWidth: openedWidth, openedHeight: openedHeight)
+            .padding(.horizontal, panelShadowHorizontalInset)
+            .padding(.bottom, panelShadowBottomInset)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.bouncy(duration: 0.35, extraBounce: 0.25)) {
+                    isHovering = hovering
                 }
-
-                v6ClosedSurface()
-                    .opacity(usesOpenedVisualState ? 0 : 1)
-                    .allowsHitTesting(!usesOpenedVisualState)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
-        .padding(.horizontal, panelShadowHorizontalInset)
-        .padding(.bottom, panelShadowBottomInset)
-        .animation(notchTransitionAnimation, value: model.notchStatus)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
-                isHovering = hovering
+            .onTapGesture {
+                if model.notchStatus != .opened {
+                    model.notchOpen(reason: .click)
+                }
             }
-        }
-        .onTapGesture {
-            if model.notchStatus != .opened {
-                model.notchOpen(reason: .click)
-            }
-        }
     }
 
-    private func syncOpenedSurfaceMount(with status: NotchStatus, immediate: Bool = false) {
-        openedSurfaceMountGeneration &+= 1
-        let generation = openedSurfaceMountGeneration
+    /// Geometry the morph shape animates between. Corner radii feed
+    /// `NotchShape.animatableData`; width/height feed an ordinary
+    /// `.frame(width:height:)` — both are plain SwiftUI-animatable
+    /// properties, already proven reliable in this view (`isPopping`/
+    /// `isHovering`), unlike the glass insert/remove transition the
+    /// previous implementation depended on.
+    private struct IslandMorphTarget {
+        var topCornerRadius: CGFloat
+        var bottomCornerRadius: CGFloat
+        var width: CGFloat
+        var height: CGFloat
+    }
 
-        switch status {
-        case .opened:
-            keepsOpenedSurfaceMounted = true
-        case .closed, .popping:
-            guard !immediate else {
-                keepsOpenedSurfaceMounted = false
-                return
-            }
+    private func islandMorphTarget(openedWidth: CGFloat, openedHeight: CGFloat) -> IslandMorphTarget {
+        guard usesOpenedVisualState else {
+            // Top corners already match the opened panel's radius here (not
+            // flat) so the closed pill's left/right edges blend into the
+            // physical MacBook notch the same way the opened panel does —
+            // `NotchShape`'s own `min(topR, rect.width/4, rect.height/4)`
+            // clamp scales this down appropriately at the pill's small size,
+            // it doesn't render at the full opened-panel radius.
+            return IslandMorphTarget(
+                topCornerRadius: usesNotchAwareOpenedHeader ? NotchShape.openedTopRadius : 0,
+                bottomCornerRadius: closedNotchHeight / 2,
+                width: closedSurfaceWidth,
+                height: closedNotchHeight
+            )
+        }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + openedSurfaceUnmountDelay) {
-                guard openedSurfaceMountGeneration == generation,
-                      model.notchStatus != .opened else {
-                    return
+        guard usesNotchAwareOpenedHeader else {
+            // .topBar profile: flat top the whole time — external displays
+            // never grow a notch-blending concave top, matching what
+            // `V6ClosedPillShape` always rendered for this profile.
+            return IslandMorphTarget(
+                topCornerRadius: 0,
+                bottomCornerRadius: NotchShape.openedBottomRadius,
+                width: openedWidth,
+                height: openedHeight
+            )
+        }
+
+        return IslandMorphTarget(
+            topCornerRadius: NotchShape.openedTopRadius,
+            bottomCornerRadius: NotchShape.openedBottomRadius,
+            width: openedWidth,
+            height: openedHeight
+        )
+    }
+
+    /// Closed-pill width, matching `V6ClosedPill`'s own internal sizing so
+    /// the morph shape's closed endpoint lines up exactly with the content
+    /// it's clipping. Always the non-popping base width — the pop bump is a
+    /// `scaleEffect` (`morphScale`), not a width change.
+    private var closedSurfaceWidth: CGFloat {
+        if isExternalDisplayPlacement {
+            return V6ClosedPill.intrinsicWidth(
+                label: model.islandClosedLabel(),
+                rightSlot: model.islandClosedRightSlotContent(),
+                height: closedNotchHeight,
+                minWidth: 70
+            )
+        }
+        return V6ClosedPill.macbookIntrinsicWidth(
+            physicalNotchWidth: targetOverlayScreen?.notchSize.width ?? 180,
+            rightSlot: model.islandClosedRightSlotContent(),
+            height: closedNotchHeight
+        )
+    }
+
+    /// The physical MacBook notch cutout is true black. The closed pill
+    /// extends past it and needs to match exactly, or the seam between
+    /// software pill and hardware cutout is visible; `V6Palette.ink` (a
+    /// deliberate near-black tone used elsewhere) is close but not equal
+    /// (`0x0d0d0f`, not `0x000000`). Applies to both closed and opened —
+    /// solid mode uses one flat color throughout, not a different one per
+    /// state. External-display placement has no physical notch to match, so
+    /// it keeps the `V6Palette.ink` tone there.
+    private var solidSurfaceFillColor: Color {
+        usesNotchAwareOpenedHeader ? .black : V6Palette.ink
+    }
+
+    /// Single continuously-morphing surface: one `NotchShape` (closed pill
+    /// and opened panel are the same shape family — at `topCornerRadius: 0`
+    /// it degenerates to a flat-top/rounded-bottom pill, geometrically
+    /// equivalent to the closed pill's own shape), one glass/fill
+    /// decoration, one clip. Content cross-fades via opacity inside it.
+    ///
+    /// This replaces two structurally-different implementations: a plain
+    /// crossfade, and a since-abandoned dual-glass-child crossfade that
+    /// ghosted because `GlassEffectContainer` shares backdrop sampling
+    /// across all its glass children regardless of individual opacity. With
+    /// only one glass child ever mounted, there's nothing to bleed.
+    @ViewBuilder
+    private func islandMorphSurface(openedWidth: CGFloat, openedHeight: CGFloat) -> some View {
+        let target = islandMorphTarget(openedWidth: openedWidth, openedHeight: openedHeight)
+        let shape = NotchShape(topCornerRadius: target.topCornerRadius, bottomCornerRadius: target.bottomCornerRadius)
+        let morphContent = islandMorphBody(shape: shape, target: target, openedWidth: openedWidth, openedHeight: openedHeight)
+
+        // Glass (`.translucent`/`.gradient`) requires macOS 26+ regardless
+        // of preference; the Personalization tab hides those options below
+        // that OS version so there's nothing to disagree with here.
+        // `scaleEffect` (hover/pop bump) is applied once, outside every
+        // branch, wrapping the material decoration too — applying it only
+        // to the undecorated content (as an earlier version did) let the
+        // scaled foreground edge and stroke overflow past the *unscaled*
+        // background fill during hover, showing a thin ring of the
+        // transparent window behind it fringed with the glass stroke, even
+        // in solid mode.
+        Group {
+            if #available(macOS 26, *), model.islandSurfaceMaterial == .translucent {
+                morphContent
+                    .glassEffect(.regular, in: shape)
+                    .overlay {
+                        shape.stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    }
+            } else if #available(macOS 26, *), model.islandSurfaceMaterial == .gradient {
+                // Always the same ZStack structure, whether closed or
+                // opened — an earlier version branched on
+                // `usesOpenedVisualState` here (solid-fill else-branch when
+                // closed, this ZStack when opened), which meant SwiftUI saw
+                // two structurally different views across the transition
+                // and could only cross-*fade* between them (the default
+                // insert/remove transition) instead of morphing, unlike
+                // translucent/solid which keep one view identity the whole
+                // time. `topBlackGradient` already degenerates to fully
+                // solid black on its own when `totalHeight` equals the
+                // closed pill's height (anchor fraction hits 1.0), so the
+                // closed look doesn't need a separate branch — only the
+                // gradient's own stop values change continuously, not the
+                // view hierarchy.
+                //
+                // The gradient fill must sit *behind* the actual header/
+                // content (as a background layer, not an `.overlay`) —
+                // overlay draws in front and was painting over the header's
+                // icons/text. Explicit ZStack layering (glass, then
+                // gradient, then content) makes that ordering unambiguous
+                // rather than relying on modifier-chain order.
+                ZStack(alignment: .top) {
+                    Color.clear
+                        .glassEffect(.regular, in: shape)
+                        .frame(width: target.width, height: target.height, alignment: .top)
+
+                    shape
+                        .fill(topBlackGradient(totalHeight: target.height))
+                        .frame(width: target.width, height: target.height, alignment: .top)
+
+                    morphContent
                 }
-                keepsOpenedSurfaceMounted = false
+                .overlay {
+                    shape.stroke(Color.white.opacity(0.07), lineWidth: 1)
+                }
+            } else {
+                morphContent
+                    .background(shape.fill(solidSurfaceFillColor))
             }
         }
+        .scaleEffect(morphScale, anchor: .top)
+    }
+
+    /// Black where the surface borders the physical notch, fading to fully
+    /// transparent (revealing the glass underneath) within roughly the
+    /// header's own height — not a fraction of the whole opened panel,
+    /// which would blacken a large chunk of the session list below it on a
+    /// tall panel. Called with the *current* animating height (closed or
+    /// opened) so the view hierarchy stays identical across the transition
+    /// (see the call site) — at the closed pill's height, `totalHeight`
+    /// equals `closedNotchHeight` and the fade naturally collapses to fully
+    /// solid black with no visible transition at all.
+    private func topBlackGradient(totalHeight: CGFloat) -> LinearGradient {
+        guard totalHeight > 0 else {
+            return LinearGradient(colors: [.black, .black], startPoint: .top, endPoint: .bottom)
+        }
+
+        // Solid black through the physical notch's own height (no fade
+        // yet — the notch itself needs to read as a flat black extension,
+        // not a gradient), *then* dissolve into glass below it. Anchoring
+        // the fade start to `closedNotchHeight` rather than 0 is what
+        // makes the notch itself look like it's melting into a black
+        // background instead of visibly fading from its very top edge.
+        let notchBottom = closedNotchHeight
+        let fadeDistance = closedNotchHeight * 3.5
+        let anchorFraction = min(1, notchBottom / totalHeight)
+        let fadeEndFraction = min(1, (notchBottom + fadeDistance) / totalHeight)
+
+        return LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: anchorFraction),
+                .init(color: .black.opacity(0), location: fadeEndFraction),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    @ViewBuilder
+    private func islandMorphBody(
+        shape: NotchShape,
+        target: IslandMorphTarget,
+        openedWidth: CGFloat,
+        openedHeight: CGFloat
+    ) -> some View {
+        ZStack(alignment: .top) {
+            openedSurfaceContent(width: openedWidth, height: openedHeight)
+                .opacity(usesOpenedVisualState ? 1 : 0)
+                .allowsHitTesting(usesOpenedVisualState)
+
+            v6ClosedSurfaceContent()
+                .opacity(usesOpenedVisualState ? 0 : 1)
+                .allowsHitTesting(!usesOpenedVisualState)
+        }
+        .frame(width: target.width, height: target.height, alignment: .top)
+        .clipShape(shape)
     }
 
     // MARK: - v6 closed surface
 
-    /// Closed island per v6 spec. Renders the flat-top pill with the
-    /// UnifiedBars glyph, respecting the user's right-slot / center-label
-    /// preferences. AppModel is @Observable so any change to sessions /
-    /// preferences re-renders this automatically; UnifiedBars runs its own
-    /// TimelineView internally for bar animation.
+    /// Closed island per v6 spec: the flat-top pill's *content* only (glyph
+    /// + right slot) — shape/fill/clip live on the shared morph container
+    /// now, so `paintsBackground: false` suppresses `V6ClosedPill`'s own ink
+    /// fill. AppModel is @Observable so any change to sessions/preferences
+    /// re-renders this automatically; `UnifiedBars` is an
+    /// `NSViewRepresentable` driving its bar animation via Core Animation,
+    /// independent of this view's render loop.
     @ViewBuilder
-    private func v6ClosedSurface() -> some View {
+    private func v6ClosedSurfaceContent() -> some View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
         V6ClosedPill(
@@ -280,48 +442,25 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            paintsBackground: false
         )
-        .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
-        .animation(popAnimation, value: isPopping)
     }
 
     // MARK: - Opened surface
 
     @ViewBuilder
-    private func openedSurface(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
-        let horizontalInset = 0.0
-        let bottomInset = 0.0
-        let surfaceWidth = openedWidth + (horizontalInset * 2)
-        let surfaceHeight = openedHeight + bottomInset
-        let surfaceShape = OpenedIslandSurfaceShape(
-            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar
-        )
+    private func openedSurfaceContent(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            openedHeaderContent
+                .frame(height: closedNotchHeight)
 
-        ZStack(alignment: .top) {
-            surfaceShape
-                .fill(V6Palette.ink)
-                .frame(width: surfaceWidth, height: surfaceHeight)
-
-            VStack(spacing: 0) {
-                openedHeaderContent
-                    .frame(height: closedNotchHeight)
-
-                openedContent
-                    .frame(width: openedWidth)
-                    .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
-                    .clipped()
-            }
-            .frame(width: openedWidth, height: openedHeight, alignment: .top)
-            .padding(.horizontal, horizontalInset)
-            .padding(.bottom, bottomInset)
-            .clipShape(surfaceShape)
-            .overlay {
-                surfaceShape
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
-            }
+            openedContent
+                .frame(width: openedWidth)
+                .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
+                .clipped()
         }
-        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+        .frame(width: openedWidth, height: openedHeight, alignment: .top)
     }
 
     // MARK: - Closed state
@@ -517,7 +656,14 @@ struct IslandPanelView: View {
         model.notchOpenReason == .notification && actionableSessionID != nil
     }
 
-    private static let maxSessionListHeight: CGFloat = 560
+    private static let maxSessionListHeight: CGFloat = 720
+    /// Must match `OverlayPanelController.maxVisibleSessionRows` — the
+    /// "certain amount" threshold. Below it the list isn't wrapped in a
+    /// `ScrollView` at all (not just sized to not need scrolling): a
+    /// `ScrollView` still captures scroll gestures and shows rubber-band
+    /// bounce even when its content already fits, which read as "still
+    /// scrollable" even though nothing was actually being clipped.
+    private static let maxVisibleSessionRows: Int = 8
 
     private var sessionListSideInset: CGFloat {
         usesNotchAwareOpenedHeader ? 46 : 16
@@ -555,11 +701,15 @@ struct IslandPanelView: View {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
 
-                    ScrollView(.vertical) {
+                    if model.islandListSessions.count > Self.maxVisibleSessionRows {
+                        ScrollView(.vertical) {
+                            sessionRowsContent(referenceDate: referenceDate)
+                        }
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                    } else {
                         sessionRowsContent(referenceDate: referenceDate)
                     }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
 
                     sessionPanelFooter
                 }

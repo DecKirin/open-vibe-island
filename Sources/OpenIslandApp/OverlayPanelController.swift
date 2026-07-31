@@ -5,14 +5,22 @@ import OpenIslandCore
 
 @MainActor
 final class OverlayPanelController {
-    private static let preferredNotchOpenedPanelWidth: CGFloat = 540
-    private static let preferredTopBarOpenedPanelWidth: CGFloat = 520
-    private static let preferredNotificationPanelWidth: CGFloat = 620
+    private static let preferredNotchOpenedPanelWidth: CGFloat = 640
+    private static let preferredTopBarOpenedPanelWidth: CGFloat = 620
+    private static let preferredNotificationPanelWidth: CGFloat = 680
     private static let openedContentWidthPadding: CGFloat = 0
     private static let openedContentBottomPadding: CGFloat = 0
-    /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
-    private static let maxSessionListHeight: CGFloat = 560
-    private static let maxVisibleSessionRows: Int = 6
+    /// Must match `IslandPanelView.maxSessionListHeight` — the height cap
+    /// applied once summed row heights exceed it (see `openedContentHeight`
+    /// below). Below this, and below `maxVisibleSessionRows` sessions, the
+    /// panel grows to fit every session with no scrolling at all; only
+    /// beyond either cap does the list actually need to scroll.
+    private static let maxSessionListHeight: CGFloat = 720
+    /// The "certain amount" threshold: below this session count the panel
+    /// shows everything with no scrolling; at or beyond it, `openedContentHeight`
+    /// only budgets height for this many rows, so the ScrollView in
+    /// `IslandPanelView.sessionList` has to scroll to reach the rest.
+    private static let maxVisibleSessionRows: Int = 8
     private static let openedRowSpacing: CGFloat = 0
     // Content padding top + scroll padding + v8 list header/footer + bottom inset.
     // Rows are now full-width scan rows, so the old inter-card spacing is gone.
@@ -421,8 +429,13 @@ final class OverlayPanelController {
 
     /// Hit-area width of the v6 closed pill.
     ///
-    /// - On a MacBook (physical notch present) the pill is locked to
-    ///   `44 + notchWidth + 44`, per the v6 design spec.
+    /// - On a MacBook (physical notch present) the pill's own rendered width
+    ///   now grows with right-slot content up to a 12-cell agents grid (see
+    ///   `V6ClosedPill.macbookIntrinsicWidth`) rather than staying locked to
+    ///   `44 + notchWidth + 44`. As with the external case below, we return
+    ///   a generous fixed hit-area sized to comfortably exceed the largest
+    ///   supported content width, rather than threading live session state
+    ///   into this static helper.
     /// - On an external display the width is content-driven; we return a
     ///   generous fixed hit-area so hover / click detection works without
     ///   the controller having to introspect live session state.
@@ -433,7 +446,7 @@ final class OverlayPanelController {
     ) -> CGFloat {
         let popBonus: CGFloat = notchStatus == .popping ? 18 : 0
         if isNotchedDisplay {
-            return notchWidth + 88 + popBonus
+            return notchWidth + 160 + popBonus
         }
         return 360 + popBonus
     }
