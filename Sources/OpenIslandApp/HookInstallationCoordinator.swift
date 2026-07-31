@@ -25,6 +25,7 @@ final class HookInstallationCoordinator {
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
+    var cursorUsageSnapshot: CursorUsageSnapshot?
     var hooksBinaryURL: URL?
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
@@ -95,6 +96,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var cursorUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -272,6 +276,38 @@ final class HookInstallationCoordinator {
 
         if let planType = snapshot.planType {
             components.append("plan \(planType)")
+        }
+
+        if let capturedAt = snapshot.capturedAt {
+            components.append("updated \(relativeTimestampFormatter.localizedString(for: capturedAt, relativeTo: .now))")
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+
+    var cursorUsageStatusTitle: String {
+        if cursorUsageSnapshot?.isEmpty == false {
+            return "Cursor usage detected"
+        }
+
+        return "Waiting for Cursor usage"
+    }
+
+    var cursorUsageStatusSummary: String {
+        if let summary = cursorUsageSummaryText {
+            return "Reading Cursor IDE's local session · \(summary)"
+        }
+
+        return "Passively reads Cursor IDE's local session (state.vscdb) when it's installed and logged in — no separate connection needed. Nothing shows until Cursor reports usage for this account."
+    }
+
+    var cursorUsageSummaryText: String? {
+        guard let snapshot = cursorUsageSnapshot, snapshot.isEmpty == false else {
+            return nil
+        }
+
+        var components = snapshot.windows.map { window in
+            "\(window.label) \(window.roundedUsedPercentage)%"
         }
 
         if let capturedAt = snapshot.capturedAt {
@@ -786,6 +822,25 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Passively reads Cursor IDE's own local session — no connect/install
+    /// step, matching Codex's local-file-only pattern. Silently no-ops
+    /// (keeps whatever snapshot is already showing, or none) if Cursor
+    /// isn't installed, isn't logged in, or the request fails — there's no
+    /// user-facing action to take in any of those cases, so this never
+    /// surfaces an error state, only degrades to "no data."
+    func refreshCursorUsageState() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let snapshot = try await CursorUsageLoader.load()
+                self.cursorUsageSnapshot = snapshot
+            } catch {
+                self.onStatusMessage?("Failed to read Cursor usage state: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Intent-aware helpers
 
     /// Reports whether the startup flow should auto-install hooks for the
@@ -1091,6 +1146,21 @@ final class HookInstallationCoordinator {
             while !Task.isCancelled {
                 self.refreshCodexUsageState()
                 try? await Task.sleep(for: .seconds(120))
+            }
+        }
+    }
+
+    func startCursorUsageMonitoringIfNeeded() {
+        guard cursorUsageMonitorTask == nil else { return }
+
+        cursorUsageMonitorTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                self.refreshCursorUsageState()
+                // Deliberately much slower than Claude's 5s/Codex's 120s local-file
+                // reads — this hits a real, unofficial third-party endpoint.
+                try? await Task.sleep(for: .seconds(300))
             }
         }
     }

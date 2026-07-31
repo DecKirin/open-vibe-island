@@ -21,6 +21,7 @@ final class AppModel {
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
+    private static let showCursorUsageDefaultsKey = "app.showCursorUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -91,6 +92,7 @@ final class AppModel {
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus? { hooks.claudeStatusLineStatus }
     var claudeUsageSnapshot: ClaudeUsageSnapshot? { hooks.claudeUsageSnapshot }
     var codexUsageSnapshot: CodexUsageSnapshot? { hooks.codexUsageSnapshot }
+    var cursorUsageSnapshot: CursorUsageSnapshot? { hooks.cursorUsageSnapshot }
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
@@ -116,6 +118,9 @@ final class AppModel {
     var codexUsageStatusTitle: String { hooks.codexUsageStatusTitle }
     var codexUsageStatusSummary: String { hooks.codexUsageStatusSummary }
     var codexUsageSummaryText: String? { hooks.codexUsageSummaryText }
+    var cursorUsageStatusTitle: String { hooks.cursorUsageStatusTitle }
+    var cursorUsageStatusSummary: String { hooks.cursorUsageStatusSummary }
+    var cursorUsageSummaryText: String? { hooks.cursorUsageSummaryText }
     var openCodePluginStatus: OpenCodePluginInstallationStatus? { hooks.openCodePluginStatus }
     var isOpenCodeSetupBusy: Bool { hooks.isOpenCodeSetupBusy }
     var openCodePluginStatusTitle: String { hooks.openCodePluginStatusTitle }
@@ -170,6 +175,7 @@ final class AppModel {
     func refreshCursorHookStatus() { hooks.refreshCursorHookStatus() }
     func refreshClaudeUsageState() { hooks.refreshClaudeUsageState() }
     func refreshCodexUsageState() { hooks.refreshCodexUsageState() }
+    func refreshCursorUsageState() { hooks.refreshCursorUsageState() }
     func installCodexHooks() { hooks.installCodexHooks() }
     func uninstallCodexHooks() { hooks.uninstallCodexHooks() }
     func installClaudeHooks() { hooks.installClaudeHooks() }
@@ -250,6 +256,12 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+        }
+    }
+    var showCursorUsage: Bool = false {
+        didSet {
+            guard hasFinishedInit, showCursorUsage != oldValue else { return }
+            UserDefaults.standard.set(showCursorUsage, forKey: Self.showCursorUsageDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -615,6 +627,16 @@ final class AppModel {
         } else {
             showCodexUsage = FileManager.default.fileExists(
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
+            )
+        }
+        if UserDefaults.standard.object(forKey: Self.showCursorUsageDefaultsKey) != nil {
+            showCursorUsage = UserDefaults.standard.bool(forKey: Self.showCursorUsageDefaultsKey)
+        } else {
+            // Same smart-default heuristic as Codex: if Cursor IDE's local
+            // session storage exists, it's already installed & logged in,
+            // so default the toggle on rather than making it undiscoverable.
+            showCursorUsage = FileManager.default.fileExists(
+                atPath: NSHomeDirectory() + "/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
@@ -1107,6 +1129,10 @@ final class AppModel {
             if showCodexUsage {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
+            }
+            if showCursorUsage {
+                hooks.refreshCursorUsageState()
+                hooks.startCursorUsageMonitoringIfNeeded()
             }
             updateChecker.startIfNeeded()
 
