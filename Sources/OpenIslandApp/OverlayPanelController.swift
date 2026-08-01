@@ -547,8 +547,15 @@ final class OverlayPanelController {
             return 300
         }
 
+        // Must mirror `IslandSessionRow`'s `isActionable` condition in
+        // `IslandPanelView` exactly: every session that requires attention
+        // renders its inline body (approval buttons / question card), not
+        // just the single spotlighted `actionableID` session. Undercounting
+        // here sizes the window smaller than the real content, and — below
+        // `maxVisibleSessionRows` — there's no ScrollView to absorb the
+        // shortfall, so the extra rows are silently clipped.
         let rowHeights = visibleSessions.map { session -> CGFloat in
-            if session.id == actionableID {
+            if session.phase.requiresAttention || session.id == actionableID {
                 return session.estimatedIslandRowHeight(at: now)
                     + actionableBodyHeight(for: session, model: model)
             }
@@ -558,8 +565,13 @@ final class OverlayPanelController {
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
         let spacingHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.openedRowSpacing
         let listHeight = rowsHeight + spacingHeight
-        // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
-        let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
+        // The cap only applies once the list is actually wrapped in a
+        // ScrollView (see `IslandPanelView.sessionList`, which only adds
+        // one past `maxVisibleSessionRows`). Below that threshold there's
+        // no scroll container, so capping here would size the window
+        // smaller than the uncapped content and clip it.
+        let listIsScrollable = model.islandListSessions.count > Self.maxVisibleSessionRows
+        let cappedListHeight = listIsScrollable ? min(listHeight, Self.maxSessionListHeight) : listHeight
         return cappedListHeight + Self.openedContentVerticalInsets
     }
 
