@@ -101,6 +101,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @State private var usageCycleIndex = 0
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -1010,9 +1011,24 @@ struct IslandPanelView: View {
         }
     }
 
-    /// Every connected provider with all of its usage windows, shown
-    /// together in a single merged chip rather than cycled one at a time.
+    /// The provider currently on screen — tapping the chip advances
+    /// `usageCycleIndex` to the next provider in `openedUsageProviderPool`.
+    /// Each provider's chip shows every one of its windows together
+    /// (e.g. Claude's 5h *and* 7d), rather than cycling window-by-window.
     private var openedUsageProviders: [UsageProviderPresentation] {
+        let pool = openedUsageProviderPool
+        guard pool.isEmpty == false else { return [] }
+        return [pool[usageCycleIndex % pool.count]]
+    }
+
+    private func advanceUsageCycle() {
+        let count = openedUsageProviderPool.count
+        guard count > 0 else { return }
+        usageCycleIndex = (usageCycleIndex + 1) % count
+    }
+
+    /// Every connected provider with all of its usage windows.
+    private var openedUsageProviderPool: [UsageProviderPresentation] {
         guard model.islandUsageDisplay == .compact else {
             return []
         }
@@ -1219,6 +1235,11 @@ struct IslandPanelView: View {
         )
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Capsule())
+        .onTapGesture {
+            advanceUsageCycle()
+        }
+        .accessibilityAddTraits(.isButton)
     }
 
     private func usageProviderSegment(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
