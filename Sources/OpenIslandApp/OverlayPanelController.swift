@@ -5,8 +5,8 @@ import OpenIslandCore
 
 @MainActor
 final class OverlayPanelController {
-    private static let preferredNotchOpenedPanelWidth: CGFloat = 640
-    private static let preferredTopBarOpenedPanelWidth: CGFloat = 620
+    private static let preferredNotchOpenedPanelWidth: CGFloat = 720
+    private static let preferredTopBarOpenedPanelWidth: CGFloat = 700
     private static let preferredNotificationPanelWidth: CGFloat = 680
     private static let openedContentWidthPadding: CGFloat = 0
     private static let openedContentBottomPadding: CGFloat = 0
