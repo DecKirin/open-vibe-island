@@ -1011,46 +1011,62 @@ struct IslandPanelView: View {
         }
     }
 
-    /// Every window from every connected provider, flattened into one
-    /// ordered list. `openedUsageProviders` shows exactly one entry from
-    /// this list at a time — clicking the badge advances `usageCycleIndex`.
-    private var openedUsageCycleEntries: [UsageCycleEntry] {
+    /// The provider currently on screen — tapping the chip advances
+    /// `usageCycleIndex` to the next provider in `openedUsageProviderPool`.
+    /// Each provider's chip shows every one of its windows together
+    /// (e.g. Claude's 5h *and* 7d), rather than cycling window-by-window.
+    private var openedUsageProviders: [UsageProviderPresentation] {
+        let pool = openedUsageProviderPool
+        guard pool.isEmpty == false else { return [] }
+        return [pool[usageCycleIndex % pool.count]]
+    }
+
+    private func advanceUsageCycle() {
+        let count = openedUsageProviderPool.count
+        guard count > 0 else { return }
+        usageCycleIndex = (usageCycleIndex + 1) % count
+    }
+
+    /// Every connected provider with all of its usage windows.
+    private var openedUsageProviderPool: [UsageProviderPresentation] {
         guard model.islandUsageDisplay == .compact else {
             return []
         }
 
-        var entries: [UsageCycleEntry] = []
+        var providers: [UsageProviderPresentation] = []
 
         if let snapshot = model.claudeUsageSnapshot,
            snapshot.isEmpty == false {
+            var windows: [UsageWindowPresentation] = []
+
             if let fiveHour = snapshot.fiveHour {
-                entries.append(
-                    UsageCycleEntry(
+                windows.append(
+                    UsageWindowPresentation(
                         id: "claude-5h",
-                        providerId: "claude",
-                        providerTitle: "Claude",
-                        window: UsageWindowPresentation(
-                            id: "claude-5h",
-                            label: "5h",
-                            usedPercentage: fiveHour.usedPercentage,
-                            resetsAt: fiveHour.resetsAt
-                        )
+                        label: "5h",
+                        usedPercentage: fiveHour.usedPercentage,
+                        resetsAt: fiveHour.resetsAt
                     )
                 )
             }
 
             if let sevenDay = snapshot.sevenDay {
-                entries.append(
-                    UsageCycleEntry(
+                windows.append(
+                    UsageWindowPresentation(
                         id: "claude-7d",
-                        providerId: "claude",
-                        providerTitle: "Claude",
-                        window: UsageWindowPresentation(
-                            id: "claude-7d",
-                            label: "7d",
-                            usedPercentage: sevenDay.usedPercentage,
-                            resetsAt: sevenDay.resetsAt
-                        )
+                        label: "7d",
+                        usedPercentage: sevenDay.usedPercentage,
+                        resetsAt: sevenDay.resetsAt
+                    )
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "claude",
+                        title: "Claude",
+                        windows: windows
                     )
                 )
             }
@@ -1059,64 +1075,50 @@ struct IslandPanelView: View {
         if model.showCodexUsage,
            let snapshot = model.codexUsageSnapshot,
            snapshot.isEmpty == false {
-            entries.append(contentsOf: snapshot.windows.map { window in
-                UsageCycleEntry(
+            let windows = snapshot.windows.map { window in
+                UsageWindowPresentation(
                     id: "codex-\(window.key)",
-                    providerId: "codex",
-                    providerTitle: "Codex",
-                    window: UsageWindowPresentation(
-                        id: "codex-\(window.key)",
-                        label: window.label,
-                        usedPercentage: window.usedPercentage,
-                        resetsAt: window.resetsAt
+                    label: window.label,
+                    usedPercentage: window.usedPercentage,
+                    resetsAt: window.resetsAt
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "codex",
+                        title: "Codex",
+                        windows: windows
                     )
                 )
-            })
+            }
         }
 
         if model.showCursorUsage,
            let snapshot = model.cursorUsageSnapshot,
            snapshot.isEmpty == false {
-            entries.append(contentsOf: snapshot.windows.map { window in
-                UsageCycleEntry(
+            let windows = snapshot.windows.map { window in
+                UsageWindowPresentation(
                     id: "cursor-\(window.label)",
-                    providerId: "cursor",
-                    providerTitle: "Cursor",
-                    window: UsageWindowPresentation(
-                        id: "cursor-\(window.label)",
-                        label: window.label,
-                        usedPercentage: window.usedPercentage,
-                        resetsAt: nil
+                    label: window.label,
+                    usedPercentage: window.usedPercentage,
+                    resetsAt: nil
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "cursor",
+                        title: "Cursor",
+                        windows: windows
                     )
                 )
-            })
+            }
         }
 
-        return entries
-    }
-
-    private func advanceUsageCycle() {
-        let count = openedUsageCycleEntries.count
-        guard count > 0 else { return }
-        usageCycleIndex = (usageCycleIndex + 1) % count
-    }
-
-    /// At most one entry — the current position in the usage cycle. Reusing
-    /// `UsageProviderPresentation` here (rather than a dedicated single-entry
-    /// type) means the existing lane-splitting/layout math below needs no
-    /// changes: it already handles the "0 or 1 provider" case correctly.
-    private var openedUsageProviders: [UsageProviderPresentation] {
-        let entries = openedUsageCycleEntries
-        guard entries.isEmpty == false else { return [] }
-
-        let entry = entries[usageCycleIndex % entries.count]
-        return [
-            UsageProviderPresentation(
-                id: entry.providerId,
-                title: entry.providerTitle,
-                windows: [entry.window]
-            ),
-        ]
+        return providers
     }
 
     private func splitUsageProviders(
@@ -1212,28 +1214,17 @@ struct IslandPanelView: View {
         _ providers: [UsageProviderPresentation],
         usesShortTitles: Bool
     ) -> some View {
-        HStack(spacing: 7) {
-            ForEach(providers) { provider in
-                compactUsageChip(provider, usesShortTitle: usesShortTitles)
+        HStack(spacing: 0) {
+            ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
+                if index > 0 {
+                    Rectangle()
+                        .fill(.white.opacity(0.1))
+                        .frame(width: 1, height: 11)
+                        .padding(.horizontal, 7)
+                }
+
+                usageProviderSegment(provider, usesShortTitle: usesShortTitles)
             }
-        }
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(usesShortTitle ? provider.shortTitle : provider.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.74))
-
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
-
-            Text("\(provider.peakUsagePercentage)%")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1242,11 +1233,33 @@ struct IslandPanelView: View {
             Capsule()
                 .strokeBorder(.white.opacity(0.06), lineWidth: 1)
         )
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .contentShape(Capsule())
         .onTapGesture {
             advanceUsageCycle()
         }
         .accessibilityAddTraits(.isButton)
+    }
+
+    private func usageProviderSegment(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
+        HStack(spacing: 5) {
+            Text(usesShortTitle ? provider.shortTitle : provider.title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.74))
+
+            ForEach(provider.windows) { window in
+                HStack(spacing: 3) {
+                    Text(window.label)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
+
+                    Text("\(window.roundedUsedPercentage)%")
+                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(usageColor(for: window.usedPercentage))
+                }
+            }
+        }
         .help(usageHelpText(for: provider))
     }
 
@@ -1311,24 +1324,6 @@ private struct UsageProviderPresentation: Identifiable {
     let title: String
     let windows: [UsageWindowPresentation]
 
-    var peakWindow: UsageWindowPresentation? {
-        windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
-        }
-    }
-
-    var peakWindowLabel: String {
-        peakWindow?.label ?? ""
-    }
-
-    var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
-    }
-
-    var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
-    }
-
     var shortTitle: String {
         switch id {
         case "claude":
@@ -1352,14 +1347,6 @@ private struct UsageWindowPresentation: Identifiable {
     var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
     }
-}
-
-/// One window from one provider — the unit the badge cycles through on tap.
-private struct UsageCycleEntry: Identifiable {
-    let id: String
-    let providerId: String
-    let providerTitle: String
-    let window: UsageWindowPresentation
 }
 
 private struct OpenedHeaderMetrics {
