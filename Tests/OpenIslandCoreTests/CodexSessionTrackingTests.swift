@@ -1477,6 +1477,60 @@ struct CodexSessionTrackingTests {
         #expect(records.count == 1)
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Rewritten after truncation.")
     }
+
+    @Test
+    func codexRolloutDiscoveryReparsesSameSizeRewrites() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-rewrite-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-rewritten.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalBody = [
+            sessionMetaLine(
+                sessionID: "codex-session-rewritten",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Original same-size content.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n")
+        let replacementBody = originalBody.replacingOccurrences(
+            of: "Original same-size content.",
+            with: "Replaced same-size content."
+        )
+        #expect(originalBody.utf8.count == replacementBody.utf8.count)
+
+        try originalBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        let originalRecords = discovery.discoverRecentSessions(now: now)
+        #expect(originalRecords.first?.codexMetadata?.lastAssistantMessage == "Original same-size content.")
+
+        try replacementBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let rewrittenRecords = discovery.discoverRecentSessions(now: later)
+
+        #expect(rewrittenRecords.count == 1)
+        #expect(rewrittenRecords.first?.codexMetadata?.lastAssistantMessage == "Replaced same-size content.")
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {

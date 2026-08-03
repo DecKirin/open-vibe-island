@@ -521,9 +521,13 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         if let cached = state, cached.fileSize == fileSize, cached.modifiedAt == modifiedAt {
             return cached.record
         }
-        if let cached = state, fileSize < cached.consumedOffset {
-            // Truncated or replaced in place — the cached fold no longer
-            // matches the bytes on disk.
+        if let cached = state,
+           fileSize < cached.consumedOffset
+               || (fileSize == cached.fileSize && modifiedAt != cached.modifiedAt) {
+            // Truncated or rewritten in place — the cached fold no longer
+            // matches the bytes on disk. A same-size rewrite has no appended
+            // suffix to parse, so its changed modification date must also
+            // invalidate the snapshot.
             state = nil
         }
 
