@@ -338,6 +338,12 @@ public enum CodexAppSessionReconciler {
     }
 }
 
+struct CodexRolloutDiscoveryDiagnostics: Equatable, Sendable {
+    var bytesRead = 0
+    var parsedFileCount = 0
+    var cacheHitCount = 0
+}
+
 public final class CodexRolloutDiscovery: @unchecked Sendable {
     private struct Candidate {
         var fileURL: URL
@@ -390,6 +396,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let stateLock = NSLock()
     private var parseStates: [String: ParseState] = [:]
     private var scanInProgress = false
+    private var _lastScanDiagnostics = CodexRolloutDiscoveryDiagnostics()
+
+    var lastScanDiagnostics: CodexRolloutDiscoveryDiagnostics {
+        stateLock.withLock { _lastScanDiagnostics }
+    }
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
@@ -414,10 +425,12 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
         scanInProgress = true
         stateLock.unlock()
+        var diagnostics = CodexRolloutDiscoveryDiagnostics()
         defer {
-            stateLock.lock()
-            scanInProgress = false
-            stateLock.unlock()
+            stateLock.withLock {
+                _lastScanDiagnostics = diagnostics
+                scanInProgress = false
+            }
         }
 
         guard fileManager.fileExists(atPath: rootURL.path),
@@ -479,7 +492,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             guard let record = discoverRecord(
                 fileURL: candidate.fileURL,
                 modifiedAt: candidate.modifiedAt,
-                fileSize: candidate.fileSize
+                fileSize: candidate.fileSize,
+                diagnostics: &diagnostics
             ) else {
                 continue
             }
@@ -503,7 +517,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private func discoverRecord(
         fileURL: URL,
         modifiedAt: Date,
-        fileSize: Int
+        fileSize: Int,
+        diagnostics: inout CodexRolloutDiscoveryDiagnostics
     ) -> CodexTrackedSessionRecord? {
         // Rollouts are append-only folds, so parse them incrementally:
         // cache the accumulated snapshot per file and only reduce bytes
@@ -519,6 +534,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         stateLock.unlock()
 
         if let cached = state, cached.fileSize == fileSize, cached.modifiedAt == modifiedAt {
+            diagnostics.cacheHitCount += 1
             return cached.record
         }
         if let cached = state,
@@ -535,6 +551,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             return nil
         }
         defer { try? fileHandle.close() }
+        diagnostics.parsedFileCount += 1
 
         var snapshot = state?.snapshot ?? CodexRolloutSnapshot()
         var sessionMeta = state?.sessionMeta
@@ -557,6 +574,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
               !chunk.isEmpty {
             buffer.append(chunk)
             bytesRead += chunk.count
+            diagnostics.bytesRead += chunk.count
             for line in extractCompleteLines(from: &buffer) {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {

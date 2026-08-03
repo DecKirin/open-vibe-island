@@ -1531,6 +1531,79 @@ struct CodexSessionTrackingTests {
         #expect(rewrittenRecords.count == 1)
         #expect(rewrittenRecords.first?.codexMetadata?.lastAssistantMessage == "Replaced same-size content.")
     }
+
+    @Test
+    func codexRolloutDiscoveryReadsOnlyAppendedBytesAfterWarmup() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-read-volume-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-read-volume.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var initialLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-read-volume",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+        ]
+        let padding = String(repeating: "x", count: 512)
+        for index in 0..<200 {
+            initialLines.append(rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "padding \(index) \(padding)",
+                ]
+            ))
+        }
+        let initialBody = initialLines.joined(separator: "\n").appending("\n")
+        try initialBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.bytesRead == initialBody.utf8.count)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.bytesRead == 0)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 0)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 1)
+
+        let appendedLine = rolloutLine(
+            timestamp: "2026-04-02T04:03:46.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "user_message",
+                "message": "Only this appended line should be read.",
+            ]
+        ).appending("\n")
+        let appendHandle = try FileHandle(forWritingTo: rolloutURL)
+        try appendHandle.seekToEnd()
+        try appendHandle.write(contentsOf: Data(appendedLine.utf8))
+        try appendHandle.close()
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let appendedRecords = discovery.discoverRecentSessions(now: later)
+
+        #expect(discovery.lastScanDiagnostics.bytesRead == appendedLine.utf8.count)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+        #expect(appendedRecords.first?.codexMetadata?.lastUserPrompt == "Only this appended line should be read.")
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {
