@@ -20,6 +20,9 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case questionCard
     case completionCard
     case longCompletionCard
+    case multiAgentClosed
+    case multiAgentList
+    case multiAgentApproval
 
     var id: String { rawValue }
 
@@ -37,6 +40,12 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Completion Card"
         case .longCompletionCard:
             "Long Completion Card"
+        case .multiAgentClosed:
+            "Multi-Agent Closed Notch"
+        case .multiAgentList:
+            "Multi-Agent Session List"
+        case .multiAgentApproval:
+            "Multi-Agent Approval Card"
         }
     }
 
@@ -54,6 +63,12 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
             "Long finished-task reply stays inside the card and scrolls internally."
+        case .multiAgentClosed:
+            "Collapsed notch while ten different agents run in every phase at once."
+        case .multiAgentList:
+            "Expanded list with ten agents mixing running, approval, question, and completed states."
+        case .multiAgentApproval:
+            "Approval card raised out of a busy ten-agent fleet still working behind it."
         }
     }
 
@@ -135,6 +150,47 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(actionableSessionID: session.id),
                 sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
                 selectedSessionID: session.id
+            )
+
+        case .multiAgentClosed:
+            let sessions = DebugSessionFactory.multiAgentSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 78,
+                notchStatus: .closed,
+                notchOpenReason: nil,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id
+            )
+
+        case .multiAgentList:
+            let sessions = DebugSessionFactory.multiAgentSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 470,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id
+            )
+
+        case .multiAgentApproval:
+            let sessions = DebugSessionFactory.multiAgentSessions(now: now)
+            // The Codex session in the fleet is the one holding an approval.
+            let actionable = sessions.first { $0.phase == .waitingForApproval } ?? sessions[0]
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 330,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: actionable.id),
+                sessions: sessions,
+                selectedSessionID: actionable.id
             )
         }
     }
@@ -218,6 +274,261 @@ private enum DebugSessionFactory {
         }
         sessions[0] = lead
         return sessions
+    }
+
+    /// A fleet of ten agents, one per supported tool, spread across every
+    /// phase and attachment state at once. Exists so the multi-session
+    /// layouts (right-slot agent grid, grouping, sorting, overflow) can be
+    /// inspected without waiting for ten real agents to line up.
+    static func multiAgentSessions(now: Date) -> [AgentSession] {
+        var kimi = fleetSession(
+            id: "fleet-kimi",
+            tool: .kimiCLI,
+            workspace: "infra-scripts",
+            phase: .running,
+            summary: "Running Bash: ssh deploy@edge-01 'systemctl status island'",
+            age: 8,
+            now: now,
+            initialPrompt: "Check whether the edge boxes picked up last night's rollout.",
+            latestPrompt: "Check whether the edge boxes picked up last night's rollout.",
+            assistant: "Connecting to edge-01 to read the unit status."
+        )
+        kimi.isRemote = true
+
+        return [
+            fleetSession(
+                id: "fleet-claude",
+                tool: .claudeCode,
+                workspace: "open-island",
+                phase: .running,
+                summary: "Running Edit: Sources/OpenIslandApp/Views/IslandPanelView.swift",
+                age: 12,
+                now: now,
+                initialPrompt: "Add a toggle to show remaining usage instead of used.",
+                latestPrompt: "Also make the tooltip say which number it is.",
+                assistant: "Wiring the preference through the island chip now."
+            ),
+            fleetApprovalSession(now: now),
+            fleetQuestionSession(now: now),
+            fleetSession(
+                id: "fleet-cursor",
+                tool: .cursor,
+                workspace: "voice-input",
+                phase: .running,
+                summary: "Running Grep: usageShowsRemaining",
+                age: 64,
+                now: now,
+                initialPrompt: "Where does the transcript buffer get flushed?",
+                latestPrompt: "Show me every caller, not just the direct one.",
+                assistant: "Searching the workspace for the flush call sites."
+            ),
+            kimi,
+            fleetSession(
+                id: "fleet-opencode",
+                tool: .openCode,
+                workspace: "open-agent-sdk",
+                phase: .completed,
+                summary: "Rebased onto main and pushed — CI is green.",
+                age: 95,
+                now: now,
+                initialPrompt: "Rebase this branch and push it.",
+                latestPrompt: "Rebase this branch and push it.",
+                assistant: "Rebased onto main and pushed — CI is green."
+            ),
+            fleetSession(
+                id: "fleet-qoder",
+                tool: .qoder,
+                workspace: "design-tokens",
+                phase: .running,
+                summary: "Running Write: tokens/color.json",
+                age: 150,
+                now: now,
+                attachmentState: .detached,
+                initialPrompt: "Regenerate the color tokens from the Figma export.",
+                latestPrompt: "Regenerate the color tokens from the Figma export.",
+                assistant: "Writing the regenerated token file."
+            ),
+            fleetSession(
+                id: "fleet-codebuddy",
+                tool: .codebuddy,
+                workspace: "docs-site",
+                phase: .running,
+                summary: "Running Bash: npm run build",
+                age: 420,
+                now: now,
+                attachmentState: .stale,
+                initialPrompt: "Build the docs site and tell me what breaks.",
+                latestPrompt: "Build the docs site and tell me what breaks.",
+                assistant: "Kicking off the production build."
+            ),
+            fleetSession(
+                id: "fleet-factory",
+                tool: .factory,
+                workspace: "billing-api",
+                phase: .completed,
+                summary: "Added the retry wrapper and covered it with two tests.",
+                age: 22 * 60,
+                now: now,
+                initialPrompt: "The webhook handler drops events under load.",
+                latestPrompt: "Add a retry with backoff.",
+                assistant: "Added the retry wrapper and covered it with two tests."
+            ),
+            fleetSession(
+                id: "fleet-qwen",
+                tool: .qwenCode,
+                workspace: "notebooks",
+                phase: .completed,
+                summary: "The regression holds up once you drop the duplicated rows.",
+                age: 48 * 60,
+                now: now,
+                initialPrompt: "Sanity-check this regression for me.",
+                latestPrompt: "What happens if I drop the duplicated rows?",
+                assistant: "The regression holds up once you drop the duplicated rows."
+            ),
+        ]
+    }
+
+    private static func fleetSession(
+        id: String,
+        tool: AgentTool,
+        workspace: String,
+        phase: SessionPhase,
+        summary: String,
+        age: TimeInterval,
+        now: Date,
+        attachmentState: SessionAttachmentState = .attached,
+        initialPrompt: String,
+        latestPrompt: String,
+        assistant: String
+    ) -> AgentSession {
+        AgentSession(
+            id: id,
+            title: "\(tool.displayName) · \(workspace)",
+            tool: tool,
+            origin: .demo,
+            attachmentState: attachmentState,
+            phase: phase,
+            summary: summary,
+            updatedAt: now.addingTimeInterval(-age),
+            jumpTarget: fleetJumpTarget(id: id, workspace: workspace, tool: tool),
+            codexMetadata: tool == .codex
+                ? CodexSessionMetadata(
+                    initialUserPrompt: initialPrompt,
+                    lastUserPrompt: latestPrompt,
+                    lastAssistantMessage: assistant
+                )
+                : nil,
+            claudeMetadata: fleetUsesClaudeMetadata(tool)
+                ? ClaudeSessionMetadata(
+                    initialUserPrompt: initialPrompt,
+                    lastUserPrompt: latestPrompt,
+                    lastAssistantMessage: assistant
+                )
+                : nil,
+            geminiMetadata: tool == .geminiCLI
+                ? GeminiSessionMetadata(
+                    initialUserPrompt: initialPrompt,
+                    lastUserPrompt: latestPrompt,
+                    lastAssistantMessage: assistant
+                )
+                : nil,
+            openCodeMetadata: tool == .openCode
+                ? OpenCodeSessionMetadata(
+                    initialUserPrompt: initialPrompt,
+                    lastUserPrompt: latestPrompt,
+                    lastAssistantMessage: assistant
+                )
+                : nil,
+            cursorMetadata: tool == .cursor
+                ? CursorSessionMetadata(
+                    initialUserPrompt: initialPrompt,
+                    lastUserPrompt: latestPrompt,
+                    lastAssistantMessage: assistant
+                )
+                : nil
+        )
+    }
+
+    /// Every Claude-family CLI reuses the Claude hook payload, so they carry
+    /// `claudeMetadata` rather than a tool-specific struct.
+    private static func fleetUsesClaudeMetadata(_ tool: AgentTool) -> Bool {
+        switch tool {
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+            true
+        case .codex, .geminiCLI, .openCode, .cursor:
+            false
+        }
+    }
+
+    private static func fleetJumpTarget(id: String, workspace: String, tool: AgentTool) -> JumpTarget {
+        JumpTarget(
+            terminalApp: "Ghostty",
+            workspaceName: workspace,
+            paneTitle: "\(tool.rawValue) ~/Personal/\(workspace)",
+            workingDirectory: "/Users/wangruobing/Personal/\(workspace)",
+            terminalSessionID: "ghostty-\(id)"
+        )
+    }
+
+    private static func fleetApprovalSession(now: Date) -> AgentSession {
+        AgentSession(
+            id: "fleet-codex",
+            title: "Codex · payments-worker",
+            tool: .codex,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .waitingForApproval,
+            summary: "Allow exec_command to run the migration?",
+            updatedAt: now.addingTimeInterval(-24),
+            permissionRequest: PermissionRequest(
+                title: "Run Bash command",
+                summary: "Codex wants to apply a database migration.",
+                affectedPath: "psql $DATABASE_URL -f migrations/0042_add_retry_column.sql",
+                primaryActionTitle: "Allow",
+                secondaryActionTitle: "Deny"
+            ),
+            jumpTarget: fleetJumpTarget(id: "fleet-codex", workspace: "payments-worker", tool: .codex),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "Add a retry column to the payment attempts table.",
+                lastUserPrompt: "Go ahead and apply it to the local database.",
+                lastAssistantMessage: "Migration is written — I need approval to run it.",
+                currentTool: "exec_command",
+                currentCommandPreview: "psql $DATABASE_URL -f migrations/0042_add_retry_column.sql"
+            )
+        )
+    }
+
+    private static func fleetQuestionSession(now: Date) -> AgentSession {
+        AgentSession(
+            id: "fleet-gemini",
+            title: "Gemini CLI · marketing-site",
+            tool: .geminiCLI,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .waitingForAnswer,
+            summary: "Which breakpoint should the hero collapse at?",
+            updatedAt: now.addingTimeInterval(-38),
+            questionPrompt: QuestionPrompt(
+                title: "Which breakpoint should the hero collapse at?",
+                questions: [
+                    QuestionPromptItem(
+                        question: "Which breakpoint should the hero collapse at?",
+                        header: "Breakpoint",
+                        options: [
+                            QuestionOption(label: "768px", description: "Tablet portrait and below"),
+                            QuestionOption(label: "1024px", description: "Tablet landscape and below"),
+                            QuestionOption(label: "Other", description: "", allowsFreeform: true),
+                        ]
+                    )
+                ]
+            ),
+            jumpTarget: fleetJumpTarget(id: "fleet-gemini", workspace: "marketing-site", tool: .geminiCLI),
+            geminiMetadata: GeminiSessionMetadata(
+                initialUserPrompt: "Make the hero section responsive.",
+                lastUserPrompt: "Make the hero section responsive.",
+                lastAssistantMessage: "I need to know which breakpoint you want before I restructure it."
+            )
+        )
     }
 
     static func runningSession(now: Date) -> AgentSession {

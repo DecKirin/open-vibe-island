@@ -295,6 +295,54 @@ def main() -> None:
         if selected_session(report).get("id") != "session-completion-long":
             assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
+    elif scenario in ("multiAgentClosed", "multiAgentList", "multiAgentApproval"):
+        phases = {session.get("phase") for session in report.get("sessions") or []}
+        tools = {session.get("tool") for session in report.get("sessions") or []}
+
+        if report.get("sessionCount") != 10:
+            fail(f"expected the 10-agent fleet, got {report.get('sessionCount')!r} sessions")
+        if len(tools) < 8:
+            fail(f"expected the fleet to span at least 8 agent tools, got {sorted(tools)}")
+        missing_phases = {"running", "waitingForApproval", "waitingForAnswer", "completed"} - phases
+        if missing_phases:
+            fail(f"fleet is missing sessions in phases {sorted(missing_phases)}")
+
+        if scenario == "multiAgentClosed":
+            if notch_status != "closed":
+                fail(f"expected closed notch for multiAgentClosed, got {notch_status!r}")
+            if island_surface != "sessionList":
+                fail(f"expected sessionList surface, got {island_surface!r}")
+            # Deliberately loose: overlay width tracks the host display's
+            # notch geometry, so a tight bound fails on machines whose
+            # panel renders wider than the author's.
+            require_frame_between(
+                overlay_frame,
+                width=(200, 900),
+                height=(35, 1000),
+                context="multiAgentClosed overlay frame",
+            )
+        else:
+            if notch_status != "opened":
+                fail(f"expected opened notch for {scenario}, got {notch_status!r}")
+            require_frame_between(
+                overlay_frame,
+                width=(200, 900),
+                height=(240, 1000),
+                context=f"{scenario} overlay frame",
+            )
+
+        if scenario == "multiAgentList":
+            if island_surface != "sessionList":
+                fail(f"expected sessionList surface for multiAgentList, got {island_surface!r}")
+        elif scenario == "multiAgentApproval":
+            if not (
+                island_surface.startswith("approvalCard:")
+                or is_actionable_session_surface(island_surface)
+            ):
+                fail(f"expected an actionable approval surface, got {island_surface!r}")
+            if "Deny" not in button_labels and selected_session_phase(report) != "waitingForApproval":
+                fail("missing required approval button label 'Deny'")
+
     else:
         fail(f"unsupported scenario {scenario!r}")
 
