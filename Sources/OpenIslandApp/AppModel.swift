@@ -22,6 +22,7 @@ final class AppModel {
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let showCursorUsageDefaultsKey = "app.showCursorUsage"
+    private static let usageShowsRemainingDefaultsKey = "app.usageShowsRemaining"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -262,6 +263,15 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCursorUsage != oldValue else { return }
             UserDefaults.standard.set(showCursorUsage, forKey: Self.showCursorUsageDefaultsKey)
+        }
+    }
+    /// Renders usage percentages as headroom left in the window instead of
+    /// consumption so far. Purely a display choice — the cached snapshots
+    /// still carry used percentages.
+    var usageShowsRemaining: Bool = false {
+        didSet {
+            guard hasFinishedInit, usageShowsRemaining != oldValue else { return }
+            UserDefaults.standard.set(usageShowsRemaining, forKey: Self.usageShowsRemainingDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -639,6 +649,7 @@ final class AppModel {
                 atPath: NSHomeDirectory() + "/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
             )
         }
+        usageShowsRemaining = UserDefaults.standard.bool(forKey: Self.usageShowsRemainingDefaultsKey)
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(

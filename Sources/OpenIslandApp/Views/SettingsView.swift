@@ -644,6 +644,16 @@ struct SetupSettingsPane: View {
                     get: { model.showCursorUsage },
                     set: { model.showCursorUsage = $0 }
                 ))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(lang.t("settings.general.usageShowsRemaining"), isOn: Binding(
+                        get: { model.usageShowsRemaining },
+                        set: { model.usageShowsRemaining = $0 }
+                    ))
+                    Text(lang.t("settings.general.usageShowsRemaining.note"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))

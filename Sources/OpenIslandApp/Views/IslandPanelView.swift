@@ -1254,7 +1254,9 @@ struct IslandPanelView: View {
                         .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.42))
 
-                    Text("\(window.roundedUsedPercentage)%")
+                    // Color always tracks consumption, so green keeps meaning
+                    // "healthy" whichever number is on screen.
+                    Text("\(window.roundedPercentage(showingRemaining: model.usageShowsRemaining))%")
                         .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(usageColor(for: window.usedPercentage))
                 }
@@ -1264,8 +1266,18 @@ struct IslandPanelView: View {
     }
 
     private func usageHelpText(for provider: UsageProviderPresentation) -> String {
-        provider.windows.map { window in
-            var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
+        let key = model.usageShowsRemaining
+            ? "island.usage.help.remaining"
+            : "island.usage.help.used"
+
+        return provider.windows.map { window in
+            var parts = [
+                model.lang.t(
+                    key,
+                    window.label,
+                    window.roundedPercentage(showingRemaining: model.usageShowsRemaining)
+                )
+            ]
             if let resetsAt = window.resetsAt,
                let remaining = remainingDurationString(until: resetsAt) {
                 parts.append(remaining)
@@ -1344,8 +1356,8 @@ private struct UsageWindowPresentation: Identifiable {
     let usedPercentage: Double
     let resetsAt: Date?
 
-    var roundedUsedPercentage: Int {
-        Int(usedPercentage.rounded())
+    func roundedPercentage(showingRemaining: Bool) -> Int {
+        UsagePercentage.rounded(used: usedPercentage, showingRemaining: showingRemaining)
     }
 }
 

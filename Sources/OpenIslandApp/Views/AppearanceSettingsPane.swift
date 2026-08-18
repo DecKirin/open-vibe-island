@@ -459,7 +459,7 @@ struct AppearanceSettingsPane: View {
                 ) {
                     model.updateAppearancePreferences(for: editingProfile) { $0.usageDisplay = option }
                 } icon: {
-                    UsageDisplayPreview(option: option)
+                    UsageDisplayPreview(option: option, showsRemaining: model.usageShowsRemaining)
                 }
             }
         }
@@ -1504,12 +1504,15 @@ private struct StateIndicatorPreview: View {
 
 private struct UsageDisplayPreview: View {
     let option: IslandUsageDisplay
+    /// Mirrors the Setup pane's "show remaining" toggle so the preview
+    /// matches what the island actually renders.
+    let showsRemaining: Bool
 
     var body: some View {
         HStack(spacing: 6) {
             if option == .compact {
-                usageChip("Cl", window: "5h", value: 42, color: Color(hex: AgentTool.claudeCode.brandColorHex) ?? .orange)
-                usageChip("Cx", window: "7d", value: 13, color: Color(hex: AgentTool.codex.brandColorHex) ?? .blue)
+                usageChip("Cl", window: "5h", value: value(used: 42), color: Color(hex: AgentTool.claudeCode.brandColorHex) ?? .orange)
+                usageChip("Cx", window: "7d", value: value(used: 13), color: Color(hex: AgentTool.codex.brandColorHex) ?? .blue)
             } else {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(V6Palette.paper.opacity(0.18))
@@ -1517,6 +1520,10 @@ private struct UsageDisplayPreview: View {
             }
         }
         .frame(width: 104, alignment: .center)
+    }
+
+    private func value(used: Int) -> Int {
+        showsRemaining ? 100 - used : used
     }
 
     private func usageChip(_ title: String, window: String, value: Int, color: Color) -> some View {

@@ -28,6 +28,8 @@
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.showCursorUsage" = "顯示 Cursor 用量";
+"settings.general.usageShowsRemaining" = "顯示剩餘量而非已用量";
+"settings.general.usageShowsRemaining.note" = "用量百分比顯示每個視窗的剩餘額度，而不是已消耗的額度。";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已啟用";
@@ -175,6 +177,8 @@
 "island.quit.confirmTitle" = "結束 Open Island？";
 "island.quit.confirmAction" = "結束";
 "island.quit.confirmMessage" = "確定要結束嗎？";
+"island.usage.help.used" = "%1$@ 已用 %2$d%%";
+"island.usage.help.remaining" = "%1$@ 剩餘 %2$d%%";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ 可更新 — 點擊更新";
