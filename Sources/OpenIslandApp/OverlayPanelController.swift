@@ -26,6 +26,13 @@ final class OverlayPanelController {
     // Rows are now full-width scan rows, so the old inter-card spacing is gone.
     private static let openedContentVerticalInsets: CGFloat = 84
     private static let notificationMeasuredContentPadding: CGFloat = 8
+    /// Breathing room on top of the measured opened-list height. Kept small
+    /// deliberately: this is exact content, and slack here shows up as dead
+    /// space under the last row.
+    private static let openedMeasuredContentPadding: CGFloat = 2
+    /// `installHooksHint` + its top padding + the `openedContent` VStack
+    /// spacing. Estimate-path only.
+    private static let installHooksHintHeight: CGFloat = 49
     private static let notificationEstimatedVerticalInsets: CGFloat = 36
     private static let openedEmptyStateHeight: CGFloat = 108
     private static let questionCardBaseHeight: CGFloat = 110
@@ -38,6 +45,12 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
+
+    /// Height most recently budgeted for the opened island content. Recorded
+    /// for the harness so a run can assert the panel actually covers the
+    /// content SwiftUI measured, rather than inferring it from the window
+    /// frame and re-deriving the notch/inset arithmetic.
+    private(set) var lastOpenedContentHeight: CGFloat = 0
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
@@ -517,17 +530,35 @@ final class OverlayPanelController {
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
+        let height = computeOpenedContentHeight(for: model)
+        lastOpenedContentHeight = height
+        return height
+    }
+
+    private func computeOpenedContentHeight(for model: AppModel) -> CGFloat {
         let now = Date.now
         let visibleSessions = openedVisibleSessions(
             sessions: model.islandListSessions
         )
 
-        if visibleSessions.isEmpty {
-            return Self.openedEmptyStateHeight
-        }
-
         let actionableID = model.islandSurface.sessionID
         let isNotificationMode = model.notchOpenReason == .notification && actionableID != nil
+        let listIsScrollable = model.islandListSessions.count > Self.maxVisibleSessionRows
+
+        // Below `maxVisibleSessionRows` the list has no ScrollView, so the
+        // panel is the only thing that can make room and any shortfall in the
+        // estimate below is silently clipped. Prefer SwiftUI's measurement of
+        // the real content, exactly as notification mode already does; the
+        // estimate stays as the first-frame fallback.
+        if !isNotificationMode,
+           !listIsScrollable,
+           model.measuredOpenedListContentHeight > 0 {
+            return model.measuredOpenedListContentHeight + Self.openedMeasuredContentPadding
+        }
+
+        if visibleSessions.isEmpty {
+            return Self.openedEmptyStateHeight + installHooksHintHeight(for: model)
+        }
 
         if isNotificationMode {
             // Use SwiftUI-measured height when available (accurate after first render).
@@ -570,9 +601,15 @@ final class OverlayPanelController {
         // one past `maxVisibleSessionRows`). Below that threshold there's
         // no scroll container, so capping here would size the window
         // smaller than the uncapped content and clip it.
-        let listIsScrollable = model.islandListSessions.count > Self.maxVisibleSessionRows
         let cappedListHeight = listIsScrollable ? min(listHeight, Self.maxSessionListHeight) : listHeight
-        return cappedListHeight + Self.openedContentVerticalInsets
+        return cappedListHeight + Self.openedContentVerticalInsets + installHooksHintHeight(for: model)
+    }
+
+    /// The install-hooks hint sits above the list inside `openedContent`, so
+    /// it costs real height whenever no agent is set up yet. Only used by the
+    /// estimate path — the measured path already includes it.
+    private func installHooksHintHeight(for model: AppModel) -> CGFloat {
+        model.hasAnyInstalledAgent ? 0 : Self.installHooksHintHeight
     }
 
     /// Additional height for the actionable session's inline action area.

@@ -89,6 +89,13 @@ struct HarnessArtifactReport: Codable {
     let selectedSessionID: String?
     let islandSurface: String
     let notchStatus: String
+    /// SwiftUI's intrinsic height for the opened list content, or 0 when the
+    /// list is scrollable (where the panel is allowed to be shorter than the
+    /// content). Compare against the overlay frame to catch clipped rows.
+    let measuredOpenedListContentHeight: Double
+    /// Height the overlay controller budgeted for that content. Must be >=
+    /// `measuredOpenedListContentHeight` whenever the list cannot scroll.
+    let openedContentHeightBudget: Double
     let runtime: HarnessRuntimeArtifacts?
     let sessions: [SessionSnapshot]
 }
@@ -165,6 +172,8 @@ enum HarnessArtifactRecorder {
             selectedSessionID: model.selectedSessionID,
             islandSurface: surfaceDescription(model.islandSurface),
             notchStatus: notchStatusDescription(model.notchStatus),
+            measuredOpenedListContentHeight: Double(model.measuredOpenedListContentHeight),
+            openedContentHeightBudget: Double(model.overlay.overlayPanelController.lastOpenedContentHeight),
             runtime: runtimeArtifacts,
             sessions: model.sessions.map {
                 HarnessArtifactReport.SessionSnapshot(

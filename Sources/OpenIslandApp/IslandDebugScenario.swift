@@ -23,6 +23,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case multiAgentClosed
     case multiAgentList
     case multiAgentApproval
+    case multiAgentCompact
 
     var id: String { rawValue }
 
@@ -46,6 +47,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Multi-Agent Session List"
         case .multiAgentApproval:
             "Multi-Agent Approval Card"
+        case .multiAgentCompact:
+            "Multi-Agent Compact List"
         }
     }
 
@@ -69,6 +72,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Expanded list with ten agents mixing running, approval, question, and completed states."
         case .multiAgentApproval:
             "Approval card raised out of a busy ten-agent fleet still working behind it."
+        case .multiAgentCompact:
+            "Six agents — below the scroll threshold, so the panel must grow to fit every row."
         }
     }
 
@@ -191,6 +196,19 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(actionableSessionID: actionable.id),
                 sessions: sessions,
                 selectedSessionID: actionable.id
+            )
+
+        case .multiAgentCompact:
+            let sessions = DebugSessionFactory.compactFleetSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 400,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id
             )
         }
     }
@@ -386,6 +404,14 @@ private enum DebugSessionFactory {
                 assistant: "The regression holds up once you drop the duplicated rows."
             ),
         ]
+    }
+
+    /// The first six of the fleet — deliberately below
+    /// `maxVisibleSessionRows`, where the list renders with no `ScrollView`.
+    /// The panel has to grow to every row's real height here, so this is the
+    /// scenario that catches height under-estimates as clipped content.
+    static func compactFleetSessions(now: Date) -> [AgentSession] {
+        Array(multiAgentSessions(now: now).prefix(6))
     }
 
     private static func fleetSession(

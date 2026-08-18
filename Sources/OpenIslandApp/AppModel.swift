@@ -768,6 +768,21 @@ final class AppModel {
         }
     }
 
+    /// SwiftUI's own height for the opened session list, published only while
+    /// the list renders without a `ScrollView`. In that mode the panel is the
+    /// only thing that can make room for the rows, and the estimate the
+    /// overlay controller computes routinely falls short (the install-hooks
+    /// hint, section headers and wrapped text are all invisible to it), so
+    /// the shortfall used to be clipped with no way to scroll to it.
+    var measuredOpenedListContentHeight: CGFloat = 0 {
+        didSet {
+            let delta = abs(measuredOpenedListContentHeight - oldValue)
+            if delta >= 2, measuredOpenedListContentHeight > 0 {
+                overlay.refreshOverlayPlacementIfVisible()
+            }
+        }
+    }
+
     var surfacedSessions: [AgentSession] {
         sessionBuckets.primary
     }

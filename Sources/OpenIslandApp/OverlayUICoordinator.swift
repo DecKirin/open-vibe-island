@@ -224,10 +224,11 @@ final class OverlayUICoordinator {
 
         overlayTransitionGeneration &+= 1
 
-        // Reset measured notification height when the surface changes so stale
-        // measurements from a previous notification don't mis-size the new one.
+        // Reset measured heights when the surface changes so stale
+        // measurements from a previous surface don't mis-size the new one.
         if surface != islandSurface {
             appModel?.measuredNotificationContentHeight = 0
+            appModel?.measuredOpenedListContentHeight = 0
         }
 
         withAnimation(Self.transitionAnimation(for: status)) {

@@ -16,6 +16,18 @@ private struct ContentHeightKey: PreferenceKey {
     }
 }
 
+/// Intrinsic height of the opened (non-notification) island content.
+///
+/// Read from inside the content, before `openedSurfaceContent` clamps and
+/// clips it, so the value is what the content *wants* rather than what it
+/// was allowed — which is exactly what the panel needs in order to grow.
+private struct OpenedContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Auto-height container: renders content directly (auto-sizing).
 /// When content exceeds maxHeight, wraps in ScrollView at fixed maxHeight.
 private struct AutoHeightScrollView<Content: View>: View {
@@ -577,6 +589,21 @@ struct IslandPanelView: View {
             }
         }
         .padding(.bottom, 0)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: OpenedContentHeightKey.self,
+                    value: geo.size.height
+                )
+            }
+        )
+        .onPreferenceChange(OpenedContentHeightKey.self) { height in
+            // Only meaningful without a ScrollView. Once one is present it
+            // accepts whatever height it is offered, so the measurement would
+            // just echo the current panel height back and pin it there.
+            guard height > 0, !isNotificationMode, !openedListIsScrollable else { return }
+            model.measuredOpenedListContentHeight = height
+        }
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -672,6 +699,14 @@ struct IslandPanelView: View {
         usesNotchAwareOpenedHeader ? 46 : 16
     }
 
+    /// Single source of truth for "is the list wrapped in a `ScrollView`".
+    /// The panel sizing path in `OverlayPanelController` keys off the same
+    /// threshold — the two must agree, or the panel budgets height for a
+    /// scroll container that isn't there (or vice versa).
+    private var openedListIsScrollable: Bool {
+        model.islandListSessions.count > Self.maxVisibleSessionRows
+    }
+
     private var sessionList: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let referenceDate = context.date
@@ -704,7 +739,7 @@ struct IslandPanelView: View {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
 
-                    if model.islandListSessions.count > Self.maxVisibleSessionRows {
+                    if openedListIsScrollable {
                         ScrollView(.vertical) {
                             sessionRowsContent(referenceDate: referenceDate)
                         }

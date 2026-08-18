@@ -1221,6 +1221,41 @@ struct AppModelSessionListTests {
 
     @Test
     @MainActor
+    func openedListMeasuredHeightClearedWhenSurfaceChanges() {
+        let model = AppModel()
+        model.isSoundMuted = true
+
+        var session = AgentSession(
+            id: "list-session",
+            title: "Codex · proj",
+            tool: .codex,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running exec_command",
+            updatedAt: .now
+        )
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        model.notchStatus = .opened
+        model.notchOpenReason = .click
+        model.islandSurface = .sessionList()
+        model.measuredOpenedListContentHeight = 420
+
+        // Moving to a different surface must drop the measurement — a stale
+        // one would size the next surface's panel from the old content.
+        model.overlay.presentNotificationSurface(
+            .sessionList(actionableSessionID: "list-session")
+        )
+
+        #expect(
+            model.measuredOpenedListContentHeight == 0,
+            "Changing surface must discard the opened list's measured height."
+        )
+    }
+
+    @Test
+    @MainActor
     func hoveredNotificationCardIsNotReplacedByAnotherNotification() {
         let model = AppModel()
         model.isSoundMuted = true

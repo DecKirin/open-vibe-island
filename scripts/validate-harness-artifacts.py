@@ -295,17 +295,47 @@ def main() -> None:
         if selected_session(report).get("id") != "session-completion-long":
             assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
-    elif scenario in ("multiAgentClosed", "multiAgentList", "multiAgentApproval"):
+    elif scenario in (
+        "multiAgentClosed",
+        "multiAgentList",
+        "multiAgentApproval",
+        "multiAgentCompact",
+    ):
         phases = {session.get("phase") for session in report.get("sessions") or []}
         tools = {session.get("tool") for session in report.get("sessions") or []}
+        expected_sessions = 6 if scenario == "multiAgentCompact" else 10
+        expected_tools = 5 if scenario == "multiAgentCompact" else 8
 
-        if report.get("sessionCount") != 10:
-            fail(f"expected the 10-agent fleet, got {report.get('sessionCount')!r} sessions")
-        if len(tools) < 8:
-            fail(f"expected the fleet to span at least 8 agent tools, got {sorted(tools)}")
+        if report.get("sessionCount") != expected_sessions:
+            fail(
+                f"expected the {expected_sessions}-agent fleet, "
+                f"got {report.get('sessionCount')!r} sessions"
+            )
+        if len(tools) < expected_tools:
+            fail(
+                f"expected the fleet to span at least {expected_tools} agent tools, "
+                f"got {sorted(tools)}"
+            )
         missing_phases = {"running", "waitingForApproval", "waitingForAnswer", "completed"} - phases
         if missing_phases:
             fail(f"fleet is missing sessions in phases {sorted(missing_phases)}")
+
+        # The regression this scenario exists for: below the scroll threshold
+        # the list has no ScrollView, so anything the panel is too short for
+        # is unreachable. The panel must cover the measured content.
+        measured = report.get("measuredOpenedListContentHeight") or 0
+        if scenario == "multiAgentCompact":
+            if measured <= 0:
+                fail(
+                    "multiAgentCompact reported no measured content height — "
+                    "the non-scrollable list must publish one"
+                )
+            budget = report.get("openedContentHeightBudget") or 0
+            if budget < measured:
+                fail(
+                    f"panel budgeted {budget}pt for {measured}pt of content — "
+                    f"{measured - budget}pt of rows are clipped with no way to scroll"
+                )
 
         if scenario == "multiAgentClosed":
             if notch_status != "closed":
@@ -331,9 +361,9 @@ def main() -> None:
                 context=f"{scenario} overlay frame",
             )
 
-        if scenario == "multiAgentList":
+        if scenario in ("multiAgentList", "multiAgentCompact"):
             if island_surface != "sessionList":
-                fail(f"expected sessionList surface for multiAgentList, got {island_surface!r}")
+                fail(f"expected sessionList surface for {scenario}, got {island_surface!r}")
         elif scenario == "multiAgentApproval":
             if not (
                 island_surface.startswith("approvalCard:")
