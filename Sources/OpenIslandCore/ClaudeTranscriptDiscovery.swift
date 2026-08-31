@@ -100,7 +100,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             }
 
             if let value = object["cwd"] as? String, !value.isEmpty {
-                cwd = value
+                // Some transcripts dump non-ASCII cwd as `\xHH` byte escapes.
+                cwd = HexEscapedUTF8.decodeIfNeeded(value)
             }
 
             if let timestampText = object["timestamp"] as? String,

@@ -188,7 +188,9 @@ struct GeneralSettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(option.title)
+                            .tag(option.id)
+                            .disabled(!option.isAvailable)
                     }
                 }
             }
@@ -247,7 +249,9 @@ struct DisplaySettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(option.title)
+                            .tag(option.id)
+                            .disabled(!option.isAvailable)
                     }
                 }
             }

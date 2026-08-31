@@ -52,7 +52,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 **10 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
 
-**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
+**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
 <details>
 <summary>完整兼容列表</summary>
@@ -89,6 +89,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Cursor** | 工作区 | 通过 `cursor` CLI 激活工作区 |
 | **Windsurf** | 工作区 | 通过 `windsurf` CLI 激活工作区 |
 | **Trae** | 工作区 | 通过 `trae` CLI 激活工作区 |
+| **Zed** | 工作区 | 识别集成终端；激活应用 / 打开项目目录 |
 | **JetBrains 全家桶** | 工作区 | IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover |
 | **Warp** | 完整支持 | 通过 SQLite pane 查找 + AX 菜单点击精准跳转到目标 tab |
 
@@ -216,11 +217,11 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 
 ## Star History
 
-<a href="https://star-history.com/#Octane0411/open-vibe-island&Date">
+<a href="https://star-history.dera.page/#Octane0411/open-vibe-island&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
  </picture>
 </a>
 
@@ -228,7 +229,7 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 
 <a href="https://github.com/Octane0411/open-vibe-island/graphs/contributors">
   <!-- CONTRIBUTORS-IMG:START -->
-  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1785776976" />
+  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1787558812" />
   <!-- CONTRIBUTORS-IMG:END -->
 </a>
 
@@ -284,7 +285,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 ### 终端支持
 
 - **Terminal.app**、**Ghostty**、**cmux**、**Kaku**、**WezTerm**、**iTerm2** 和 **Zellij** — 完整的 jump-back 支持，带会话附着匹配（cmux 通过 Unix socket API，Kaku/WezTerm/Zellij 通过 CLI pane 定位，iTerm2 通过 AppleScript session/TTY 探针）
-- **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae** — 工作区级跳转，通过对应 CLI（`code -r`、`cursor -r` 等）
+- **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae**、**Zed** — 工作区级跳转，通过对应 CLI / 激活应用（`code -r`、`cursor -r`、Zed 等）
 - **JetBrains 全家桶**（IntelliJ IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover） — 工作区级跳转，通过 IDE CLI launcher
 - **Warp** — 通过 SQLite pane 查找、pid 进程树消歧和 AX 菜单点击实现精准 tab 跳转
 

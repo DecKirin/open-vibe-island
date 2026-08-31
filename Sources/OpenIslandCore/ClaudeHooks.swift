@@ -1232,6 +1232,8 @@ public extension ClaudeHookPayload {
                 return "Windsurf"
             case "trae":
                 return "Trae"
+            case "zed":
+                return "Zed"
             default:
                 break
             }
@@ -1269,6 +1271,12 @@ public extension ClaudeHookPayload {
                 if bundleID.contains("intellij") { return "IntelliJ IDEA" }
             }
             return "IntelliJ IDEA"  // Fallback for unknown JetBrains IDE
+        }
+
+        // Zed (and Zed Preview) when TERM_PROGRAM is missing.
+        if let bundleID = environment["__CFBundleIdentifier"]?.lowercased(),
+           bundleID == "dev.zed.zed" || bundleID.hasPrefix("dev.zed.zed") {
+            return "Zed"
         }
 
         return nil

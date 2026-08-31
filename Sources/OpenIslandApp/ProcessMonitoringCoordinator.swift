@@ -1381,6 +1381,8 @@ final class ProcessMonitoringCoordinator {
             return "Windsurf"
         case "trae":
             return "Trae"
+        case "zed":
+            return "Zed"
         // JetBrains family
         case "intellij", "idea":
             return "IntelliJ IDEA"

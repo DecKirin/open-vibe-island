@@ -117,7 +117,8 @@ extension AgentSession {
     var spotlightWorkspaceName: String {
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
            !workspaceName.isEmpty {
-            return workspaceName
+            // Cover already-persisted titles that still contain `\xHH` dumps.
+            return HexEscapedUTF8.decodeIfNeeded(workspaceName)
         }
 
         let trimmedTitle = title.trimmedForSurface
@@ -125,10 +126,10 @@ extension AgentSession {
             String($0).trimmedForSurface
         }
         if pieces.count == 2, !pieces[1].isEmpty {
-            return pieces[1]
+            return HexEscapedUTF8.decodeIfNeeded(pieces[1])
         }
 
-        return trimmedTitle
+        return HexEscapedUTF8.decodeIfNeeded(trimmedTitle)
     }
 
     var spotlightWorktreeBranch: String? {

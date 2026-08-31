@@ -121,6 +121,12 @@ struct TerminalJumpService {
             ]
         ),
         TerminalAppDescriptor(
+            displayName: "Zed",
+            bundleIdentifier: "dev.zed.Zed",
+            aliases: ["zed"],
+            alternateBundleIdentifiers: ["dev.zed.Zed-Preview"]
+        ),
+        TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
             bundleIdentifier: "com.jetbrains.intellij",
             aliases: ["intellij", "idea"]

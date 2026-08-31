@@ -314,8 +314,13 @@ struct AppModelSessionListTests {
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        // Write and read through an explicit display profile: the implicit
+        // setters resolve against the machine's real screen, which flips from
+        // .topBar to .notch mid-test on notched MacBooks.
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+        }
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -331,6 +336,7 @@ struct AppModelSessionListTests {
         stale.isProcessAlive = true
 
         model.state = SessionState(sessions: [stale, done, approval])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
         #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
@@ -340,12 +346,15 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
         model.state = SessionState(sessions: [oldDone])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-done"])
         #expect(model.islandSessionSections.first?.sessions.first?.id == "old-done")
@@ -355,7 +364,9 @@ struct AppModelSessionListTests {
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionSort = .lastUpdate
+        }
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -363,6 +374,7 @@ struct AppModelSessionListTests {
         newerCompleted.isProcessAlive = true
 
         model.state = SessionState(sessions: [olderRunning, newerCompleted])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandListSessions.map(\.id) == ["newer-completed", "older-running"])
     }
@@ -759,6 +771,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
         let model = AppModel()
+        model.overlay.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
                 sessionID: "session-1",
@@ -797,6 +810,10 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
         let model = AppModel()
+        // Pin the pointer far outside the overlay: auto-collapse is never
+        // scheduled when the machine's real cursor sits inside the expanded
+        // area, which made this test depend on the host's mouse position.
+        model.overlay.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
         model.state = SessionState(
             sessions: [
                 AgentSession(

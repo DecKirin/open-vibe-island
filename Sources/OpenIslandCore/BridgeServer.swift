@@ -28,6 +28,12 @@ public final class BridgeServer: @unchecked Sendable {
         let tempID: String
     }
 
+    private struct ClaudeTranscriptCursor {
+        var transcriptPath: String
+        var readOffset: UInt64
+        var pendingData = Data()
+    }
+
     private struct PendingClaudeInteraction {
         enum Kind {
             case permission(ClaudeHookPayload)
@@ -74,6 +80,9 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: PendingTaskCreation] = [:]
+    /// Tracks the portion of each live Claude transcript already inspected for
+    /// terminal background-agent task notifications.
+    private var claudeTranscriptCursors: [String: ClaudeTranscriptCursor] = [:]
     private var stateSnapshot = SessionState()
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
@@ -622,8 +631,10 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        reconcileCompletedClaudeSubagents(for: payload)
+
         // On every event from the parent session, opportunistically clean up
-        // subagents whose SubagentStop was never received.
+        // subagents whose SubagentStop and task notification were never received.
         cleanUpStaleSubagents(forSession: payload.sessionID)
 
         switch payload.hookEventName {
@@ -2109,12 +2120,17 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func removeSubagent(agentID: String, fromSession sessionID: String) {
+        removeSubagents(agentIDs: [agentID], fromSession: sessionID)
+    }
+
+    private func removeSubagents(agentIDs: Set<String>, fromSession sessionID: String) {
+        guard !agentIDs.isEmpty else { return }
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata else {
             return
         }
 
         let previousCount = metadata.activeSubagents.count
-        metadata.activeSubagents.removeAll { $0.agentID == agentID }
+        metadata.activeSubagents.removeAll { agentIDs.contains($0.agentID) }
         guard metadata.activeSubagents.count != previousCount else {
             return
         }
@@ -2128,6 +2144,90 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    private func reconcileCompletedClaudeSubagents(for payload: ClaudeHookPayload) {
+        let notifications = readNewClaudeTaskNotifications(
+            sessionID: payload.sessionID,
+            transcriptPath: payload.transcriptPath
+        )
+        let completedAgentIDs = Set(notifications.compactMap(\.taskID))
+        removeSubagents(agentIDs: completedAgentIDs, fromSession: payload.sessionID)
+    }
+
+    private func readNewClaudeTaskNotifications(
+        sessionID: String,
+        transcriptPath: String?
+    ) -> [ClaudeTaskNotification] {
+        guard let transcriptPath,
+              !transcriptPath.isEmpty,
+              let fileSize = fileSize(atPath: transcriptPath) else {
+            return []
+        }
+
+        guard var cursor = claudeTranscriptCursors[sessionID],
+              cursor.transcriptPath == transcriptPath else {
+            claudeTranscriptCursors[sessionID] = ClaudeTranscriptCursor(
+                transcriptPath: transcriptPath,
+                readOffset: fileSize
+            )
+            return []
+        }
+
+        if fileSize < cursor.readOffset {
+            cursor.readOffset = fileSize
+            cursor.pendingData.removeAll(keepingCapacity: false)
+            claudeTranscriptCursors[sessionID] = cursor
+            return []
+        }
+
+        guard fileSize > cursor.readOffset,
+              let fileHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: transcriptPath)) else {
+            return []
+        }
+        defer { try? fileHandle.close() }
+
+        do {
+            try fileHandle.seek(toOffset: cursor.readOffset)
+        } catch {
+            cursor.readOffset = fileSize
+            cursor.pendingData.removeAll(keepingCapacity: false)
+            claudeTranscriptCursors[sessionID] = cursor
+            return []
+        }
+
+        var bytesRead: UInt64 = 0
+        while let chunk = try? fileHandle.read(upToCount: 64 * 1_024),
+              !chunk.isEmpty {
+            cursor.pendingData.append(chunk)
+            bytesRead += UInt64(chunk.count)
+        }
+        cursor.readOffset += bytesRead
+
+        var notifications: [ClaudeTaskNotification] = []
+        let newline = UInt8(ascii: "\n")
+        while let newlineIndex = cursor.pendingData.firstIndex(of: newline) {
+            let lineData = cursor.pendingData.prefix(upTo: newlineIndex)
+            cursor.pendingData.removeSubrange(...newlineIndex)
+            guard !lineData.isEmpty,
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+            notifications.append(
+                contentsOf: ClaudeTaskNotificationParser.terminalNotifications(in: object)
+            )
+        }
+
+        claudeTranscriptCursors[sessionID] = cursor
+        return notifications
+    }
+
+    private func fileSize(atPath path: String) -> UInt64? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber else {
+            return nil
+        }
+        return size.uint64Value
     }
 
     /// Removes subagents that have been inactive for too long.
@@ -2205,6 +2305,7 @@ public final class BridgeServer: @unchecked Sendable {
     /// Called when the session's turn ends (`stop`, `stopFailure`, `sessionEnd`)
     /// to ensure no stale subagent indicators linger.
     private func clearAllActiveSubagents(fromSession sessionID: String) {
+        claudeTranscriptCursors.removeValue(forKey: sessionID)
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
               !metadata.activeSubagents.isEmpty else {
             return
