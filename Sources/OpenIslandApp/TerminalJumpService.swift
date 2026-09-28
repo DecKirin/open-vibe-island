@@ -121,10 +121,21 @@ struct TerminalJumpService {
             ]
         ),
         TerminalAppDescriptor(
+            displayName: "Qoder",
+            bundleIdentifier: "com.qoder.app",
+            aliases: ["qoder"],
+            alternateBundleIdentifiers: ["com.qoder.qoder"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Zed",
             bundleIdentifier: "dev.zed.Zed",
             aliases: ["zed"],
             alternateBundleIdentifiers: ["dev.zed.Zed-Preview"]
+        ),
+        TerminalAppDescriptor(
+            displayName: "Conductor",
+            bundleIdentifier: "com.conductor.app",
+            aliases: ["conductor"]
         ),
         TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
@@ -354,6 +365,10 @@ struct TerminalJumpService {
                 // per-session deep link, so just bring the app forward.
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
+            case "com.conductor.app":
+                // No per-session deep link; bring the app forward, like Claude.app.
+                try openAction(["-b", "com.conductor.app"])
+                return "Activated Conductor."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."
@@ -471,6 +486,7 @@ struct TerminalJumpService {
         "com.trae.app": "trae",
         "cn.trae.app": "trae",
         "com.qoder.qoder": "qoder",
+        "com.qoder.app": "qoder",
     ]
 
     private func jumpToVSCodeFamilyWorkspace(_ workspacePath: String, bundleIdentifier: String) -> Bool {
@@ -613,13 +629,22 @@ struct TerminalJumpService {
             sessionName = tmuxTarget
         }
 
-        // Find the client TTY so we can explicitly target it with switch-client.
-        let clientTTY = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                                       args: ["list-clients", "-F", "#{client_tty}"])?
+        // Find the client TTY (and the session it is already attached to) so we
+        // can explicitly target it with switch-client.
+        let clientLine = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                                        args: ["list-clients", "-F", "#{client_tty}\t#{client_session}"])?
             .components(separatedBy: "\n").first { !$0.isEmpty }
+        let clientFields = clientLine?.components(separatedBy: "\t") ?? []
+        let clientTTY = clientFields.first.flatMap { $0.isEmpty ? nil : $0 }
+        let clientSession = clientFields.count > 1 ? clientFields[1] : nil
 
         // Step 1: switch-client — point the client at the target session.
-        if let clientTTY = clientTTY {
+        // Skip it when the client is already attached to that session: a
+        // redundant switch-client makes terminals that mirror tmux state
+        // (e.g. iTerm2's tmux integration, `tmux -CC`) re-attach and rebuild
+        // every native window, which loses window placement/fullscreen.
+        // select-window / select-pane below are enough in that case.
+        if let clientTTY = clientTTY, clientSession != sessionName {
             _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                                args: ["switch-client", "-c", clientTTY, "-t", sessionName])
         }

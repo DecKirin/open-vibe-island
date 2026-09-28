@@ -1002,12 +1002,38 @@ struct IslandPanelView: View {
         let providers = openedUsageProviders
 
         if providers.isEmpty == false {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
+            adaptiveUsageSummaryView(providers)
         } else {
             Color.clear
+        }
+    }
+
+    /// Renders the usage chips at the richest layout that fits the available
+    /// width, shedding detail one step at a time: reset countdowns first, then
+    /// the secondary windows, with the provider title abbreviated at each step
+    /// before anything is dropped.
+    @ViewBuilder
+    private func adaptiveUsageSummaryView(
+        _ providers: [UsageProviderPresentation]
+    ) -> some View {
+        // Re-render on a slow cadence so the reset countdowns stay honest
+        // while the panel is held open.
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            usageSummaryLadder(providers)
+        }
+    }
+
+    @ViewBuilder
+    private func usageSummaryLadder(
+        _ providers: [UsageProviderPresentation]
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: true, showsRemaining: true))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: true, showsRemaining: true))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: true, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: true, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: false, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: false, showsRemaining: false))
         }
     }
 
@@ -1149,11 +1175,8 @@ struct IslandPanelView: View {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
-            .frame(maxWidth: .infinity, alignment: alignment)
+            adaptiveUsageSummaryView(providers)
+                .frame(maxWidth: .infinity, alignment: alignment)
         }
     }
 
@@ -1212,7 +1235,7 @@ struct IslandPanelView: View {
 
     private func compactUsageSummaryView(
         _ providers: [UsageProviderPresentation],
-        usesShortTitles: Bool
+        layout: UsageChipLayout
     ) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
@@ -1223,7 +1246,7 @@ struct IslandPanelView: View {
                         .padding(.horizontal, 7)
                 }
 
-                usageProviderSegment(provider, usesShortTitle: usesShortTitles)
+                usageProviderSegment(provider, layout: layout)
             }
         }
         .padding(.horizontal, 8)
@@ -1242,13 +1265,17 @@ struct IslandPanelView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func usageProviderSegment(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(usesShortTitle ? provider.shortTitle : provider.title)
+    private func usageProviderSegment(_ provider: UsageProviderPresentation, layout: UsageChipLayout) -> some View {
+        let windows = layout.showsAllWindows
+            ? provider.windows
+            : (provider.peakWindow.map { [$0] } ?? [])
+
+        return HStack(spacing: 5) {
+            Text(layout.usesShortTitle ? provider.shortTitle : provider.title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.74))
 
-            ForEach(provider.windows) { window in
+            ForEach(windows) { window in
                 HStack(spacing: 3) {
                     Text(window.label)
                         .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
@@ -1257,6 +1284,14 @@ struct IslandPanelView: View {
                     Text("\(window.roundedUsedPercentage)%")
                         .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(usageColor(for: window.usedPercentage))
+
+                    if layout.showsRemaining,
+                       let resetsAt = window.resetsAt,
+                       let remaining = remainingDurationString(until: resetsAt) {
+                        Text("· \(remaining)")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.34))
+                    }
                 }
             }
         }
@@ -1319,6 +1354,14 @@ struct IslandPanelView: View {
     }
 }
 
+/// One rung of the usage-chip detail ladder. `adaptiveUsageSummaryView` walks
+/// these from richest to sparsest and renders the first that fits the lane.
+private struct UsageChipLayout {
+    let usesShortTitle: Bool
+    let showsAllWindows: Bool
+    let showsRemaining: Bool
+}
+
 private struct UsageProviderPresentation: Identifiable {
     let id: String
     let title: String
@@ -1334,6 +1377,12 @@ private struct UsageProviderPresentation: Identifiable {
             "Cu"
         default:
             String(title.prefix(2))
+        }
+    }
+
+    var peakWindow: UsageWindowPresentation? {
+        windows.max { lhs, rhs in
+            lhs.usedPercentage < rhs.usedPercentage
         }
     }
 }

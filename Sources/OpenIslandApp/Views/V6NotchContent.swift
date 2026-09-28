@@ -251,17 +251,30 @@ struct V6ClosedPill: View {
     // label) and the right-slot content so they never touch at small widths.
     private static let innerGap: CGFloat = 6
 
+    /// Rendered pill width — delegates to the same static sizing helpers
+    /// the island's morph surface uses, so the two can never disagree.
+    var resolvedWidth: CGFloat {
+        switch layout {
+        case .external:
+            return Self.intrinsicWidth(
+                label: label,
+                rightSlot: rightSlot,
+                height: height,
+                minWidth: minWidth
+            )
+        case .macbook:
+            return Self.macbookIntrinsicWidth(
+                physicalNotchWidth: physicalNotchWidth,
+                rightSlot: rightSlot,
+                height: height
+            )
+        }
+    }
+
     // MARK: External (fluid)
 
     private var externalBody: some View {
         let glyphW: CGFloat = 24
-        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
-        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
-
-        let labelBlock = (label == nil ? 0 : 6 + labelW)
-        let rightBlock = (rightSlot == nil ? 0 : Self.innerGap + rightW)
-        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
-        let width = max(minWidth, intrinsic)
 
         return ZStack {
             if paintsBackground {
@@ -288,7 +301,7 @@ struct V6ClosedPill: View {
             }
             .padding(.horizontal, pad)
         }
-        .frame(width: width, height: height)
+        .frame(width: resolvedWidth, height: height)
         .animation(
             .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
             value: AnyHashable([
@@ -302,12 +315,6 @@ struct V6ClosedPill: View {
     // MARK: MacBook (grows to fit content)
 
     private var macbookBody: some View {
-        let outer = Self.macbookIntrinsicWidth(
-            physicalNotchWidth: physicalNotchWidth,
-            rightSlot: rightSlot,
-            height: height
-        )
-
         return ZStack {
             if paintsBackground {
                 V6ClosedPillShape()
@@ -326,7 +333,7 @@ struct V6ClosedPill: View {
             }
             .padding(.horizontal, pad)
         }
-        .frame(width: outer, height: height)
+        .frame(width: resolvedWidth, height: height)
     }
 
     /// The `.external` layout's intrinsic width, computed the same way
